@@ -3,7 +3,7 @@ SQLAlchemy models for the FAA Audit application.
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey, Boolean, Float
 from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
@@ -100,8 +100,12 @@ class Question(Base):
     pdf_element_block_id = Column(String(100), nullable=True)
     notes = Column(JSON, default=list)  # List of notes
 
-    # Relationship
+    # Relationships
     audit = relationship("Audit", back_populates="questions")
+    ownership_assignment = relationship("OwnershipAssignment",
+                                       back_populates="question",
+                                       uselist=False,
+                                       cascade="all, delete-orphan")
 
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
@@ -173,4 +177,159 @@ class ExtractedTable(Base):
             "headers": self.headers or [],
             "rows": self.rows or [],
             "row_count": self.row_count
+        }
+
+
+class Manual(Base):
+    """
+    Represents an uploaded company manual (AIP or GMM).
+    """
+    __tablename__ = 'manuals'
+
+    id = Column(String(36), primary_key=True)  # UUID
+    filename = Column(String(255), nullable=False)
+    manual_type = Column(String(50), nullable=False)  # "AIP" or "GMM"
+    upload_date = Column(DateTime, default=datetime.utcnow)
+    version = Column(String(50), nullable=True)  # Manual version
+    page_count = Column(Integer, default=0)
+    status = Column(String(50), default='processed')
+
+    # Relationships
+    sections = relationship("ManualSection", back_populates="manual", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "filename": self.filename,
+            "manual_type": self.manual_type,
+            "upload_date": self.upload_date.isoformat() if self.upload_date else None,
+            "version": self.version,
+            "page_count": self.page_count,
+            "status": self.status,
+            "section_count": len(self.sections) if self.sections else 0
+        }
+
+
+class ManualSection(Base):
+    """
+    Represents an extracted section from a company manual.
+    """
+    __tablename__ = 'manual_sections'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    manual_id = Column(String(36), ForeignKey('manuals.id'), nullable=False)
+
+    section_number = Column(String(100), nullable=True)  # "5.2.1", "Chapter 3"
+    section_title = Column(String(500), nullable=True)
+    section_text = Column(Text, nullable=True)  # Full section content
+    page_number = Column(Integer, nullable=True)
+
+    # Extracted CFR citations found in this section
+    cfr_citations = Column(JSON, default=list)  # ["14 CFR 121.369", ...]
+
+    # Suggested owner based on content
+    suggested_owner = Column(String(50), nullable=True)
+
+    # Relationships
+    manual = relationship("Manual", back_populates="sections")
+
+    def to_dict(self):
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "manual_id": self.manual_id,
+            "section_number": self.section_number,
+            "section_title": self.section_title,
+            "section_text": self.section_text,
+            "page_number": self.page_number,
+            "cfr_citations": self.cfr_citations or [],
+            "suggested_owner": self.suggested_owner
+        }
+
+
+class OwnershipAssignment(Base):
+    """
+    Represents ownership assignment for a DCT question.
+    """
+    __tablename__ = 'ownership_assignments'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    question_id = Column(Integer, ForeignKey('questions.id'), nullable=False, unique=True)
+
+    # Primary assignment
+    primary_function = Column(String(50), nullable=False)  # One of 7 functions
+    supporting_functions = Column(JSON, default=list)  # ["MOC", "Quality"]
+
+    # Rationale and confidence
+    rationale = Column(Text, nullable=False)
+    confidence_score = Column(String(20), nullable=False)  # "High", "Medium", "Low"
+    confidence_value = Column(Float, nullable=True)  # 0.0-1.0
+
+    # Signal breakdown (transparency)
+    keyword_matches = Column(JSON, default=list)
+    cfr_matches = Column(JSON, default=list)
+    manual_section_links = Column(JSON, default=list)  # [{"section": "5.2.1", "manual": "AIP"}]
+
+    # Manual override support
+    is_manual_override = Column(Boolean, default=False)
+    override_reason = Column(Text, nullable=True)
+    override_by = Column(String(100), nullable=True)
+    override_date = Column(DateTime, nullable=True)
+
+    # Metadata
+    assigned_date = Column(DateTime, default=datetime.utcnow)
+    assignment_version = Column(String(50), nullable=True)
+
+    # Relationships
+    question = relationship("Question", back_populates="ownership_assignment")
+
+    def to_dict(self):
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "question_id": self.question_id,
+            "primary_function": self.primary_function,
+            "supporting_functions": self.supporting_functions or [],
+            "rationale": self.rationale,
+            "confidence_score": self.confidence_score,
+            "confidence_value": self.confidence_value,
+            "keyword_matches": self.keyword_matches or [],
+            "cfr_matches": self.cfr_matches or [],
+            "manual_section_links": self.manual_section_links or [],
+            "is_manual_override": self.is_manual_override,
+            "override_reason": self.override_reason,
+            "override_by": self.override_by,
+            "override_date": self.override_date.isoformat() if self.override_date else None,
+            "assigned_date": self.assigned_date.isoformat() if self.assigned_date else None,
+            "assignment_version": self.assignment_version
+        }
+
+
+class OwnershipRule(Base):
+    """
+    Represents a configurable ownership assignment rule.
+    """
+    __tablename__ = 'ownership_rules'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    rule_type = Column(String(50), nullable=False)  # "keyword", "cfr"
+    pattern = Column(String(255), nullable=False)
+    target_function = Column(String(50), nullable=False)
+    weight = Column(Float, default=1.0)
+    is_active = Column(Boolean, default=True)
+    created_date = Column(DateTime, default=datetime.utcnow)
+    notes = Column(Text, nullable=True)
+
+    def to_dict(self):
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "rule_type": self.rule_type,
+            "pattern": self.pattern,
+            "target_function": self.target_function,
+            "weight": self.weight,
+            "is_active": self.is_active,
+            "created_date": self.created_date.isoformat() if self.created_date else None,
+            "notes": self.notes
         }
