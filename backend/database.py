@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker, scoped_session
 from contextlib import contextmanager
 
 from config import DATABASE_URL
-from models import Base, Audit, Question, Finding, ExtractedTable
+from models import Base, Audit, Question, Finding, ExtractedTable, OwnershipAssignment, OwnershipRule
 
 # Create engine
 engine = create_engine(DATABASE_URL, echo=False)
@@ -246,6 +246,263 @@ def search_audits(filename: str = None, start_date: str = None, end_date: str = 
 
         audits = query.order_by(Audit.upload_date.desc()).all()
         return [a.to_dict() for a in audits]
+
+
+# =============================================================================
+# OWNERSHIP ASSIGNMENT FUNCTIONS
+# =============================================================================
+
+def save_ownership_assignments(audit_id: str, assignments: list) -> int:
+    """
+    Save ownership assignments for an audit's questions.
+
+    Args:
+        audit_id: The audit ID
+        assignments: List of assignment dictionaries from ownership engine
+
+    Returns:
+        Number of assignments saved
+    """
+    from datetime import datetime
+
+    with get_session() as session:
+        # Get all questions for this audit
+        questions = session.query(Question).filter(Question.audit_id == audit_id).all()
+        qid_to_question = {q.qid: q for q in questions}
+
+        count = 0
+        for assignment in assignments:
+            qid = assignment.get("qid")
+            question = qid_to_question.get(qid)
+
+            if not question:
+                continue
+
+            # Check if assignment already exists
+            existing = session.query(OwnershipAssignment).filter(
+                OwnershipAssignment.question_id == question.id
+            ).first()
+
+            if existing:
+                # Update existing assignment (only if not manually overridden)
+                if not existing.is_manual_override:
+                    existing.primary_function = assignment.get("primary_function")
+                    existing.supporting_functions = assignment.get("supporting_functions", [])
+                    existing.rationale = assignment.get("rationale", "")
+                    existing.confidence_score = assignment.get("confidence_score", "Low")
+                    existing.confidence_value = assignment.get("confidence_value", 0.0)
+                    existing.keyword_matches = assignment.get("keyword_matches", [])
+                    existing.cfr_matches = assignment.get("cfr_matches", [])
+                    existing.assigned_date = datetime.utcnow()
+            else:
+                # Create new assignment
+                new_assignment = OwnershipAssignment(
+                    question_id=question.id,
+                    primary_function=assignment.get("primary_function"),
+                    supporting_functions=assignment.get("supporting_functions", []),
+                    rationale=assignment.get("rationale", ""),
+                    confidence_score=assignment.get("confidence_score", "Low"),
+                    confidence_value=assignment.get("confidence_value", 0.0),
+                    keyword_matches=assignment.get("keyword_matches", []),
+                    cfr_matches=assignment.get("cfr_matches", []),
+                    is_manual_override=False
+                )
+                session.add(new_assignment)
+
+            count += 1
+
+        session.commit()
+        return count
+
+
+def get_ownership_assignments(audit_id: str) -> list:
+    """
+    Get all ownership assignments for an audit.
+
+    Args:
+        audit_id: The audit ID
+
+    Returns:
+        List of assignment dictionaries
+    """
+    with get_session() as session:
+        # Join questions with their ownership assignments
+        questions = session.query(Question).filter(Question.audit_id == audit_id).all()
+
+        assignments = []
+        for q in questions:
+            if q.ownership_assignment:
+                assignment_dict = q.ownership_assignment.to_dict()
+                # Add question info for context
+                assignment_dict["qid"] = q.qid
+                assignment_dict["question_number"] = q.question_number
+                assignment_dict["question_text_condensed"] = q.question_text_condensed
+                assignments.append(assignment_dict)
+
+        return assignments
+
+
+def override_ownership_assignment(audit_id: str, qid: str, primary_function: str,
+                                  supporting_functions: list = None,
+                                  override_reason: str = "",
+                                  override_by: str = "") -> bool:
+    """
+    Manually override ownership assignment for a question.
+
+    Args:
+        audit_id: The audit ID
+        qid: The question ID (QID)
+        primary_function: New primary function assignment
+        supporting_functions: Optional list of supporting functions
+        override_reason: Reason for the override
+        override_by: Person making the override
+
+    Returns:
+        True if updated, False if not found
+    """
+    from datetime import datetime
+
+    with get_session() as session:
+        # Find the question
+        question = session.query(Question).filter(
+            Question.audit_id == audit_id,
+            Question.qid == qid
+        ).first()
+
+        if not question:
+            return False
+
+        # Find or create assignment
+        assignment = session.query(OwnershipAssignment).filter(
+            OwnershipAssignment.question_id == question.id
+        ).first()
+
+        if not assignment:
+            # Create new assignment with override
+            assignment = OwnershipAssignment(
+                question_id=question.id,
+                primary_function=primary_function,
+                supporting_functions=supporting_functions or [],
+                rationale=f"Manual override: {override_reason}",
+                confidence_score="High",  # Manual overrides are considered high confidence
+                confidence_value=1.0,
+                is_manual_override=True,
+                override_reason=override_reason,
+                override_by=override_by,
+                override_date=datetime.utcnow()
+            )
+            session.add(assignment)
+        else:
+            # Update existing assignment
+            assignment.primary_function = primary_function
+            assignment.supporting_functions = supporting_functions or []
+            assignment.is_manual_override = True
+            assignment.override_reason = override_reason
+            assignment.override_by = override_by
+            assignment.override_date = datetime.utcnow()
+            assignment.rationale = f"Manual override: {override_reason}"
+            assignment.confidence_score = "High"
+            assignment.confidence_value = 1.0
+
+        session.commit()
+        return True
+
+
+def add_ownership_rule(rule_type: str, pattern: str, target_function: str,
+                       weight: float = 1.0, notes: str = None) -> int:
+    """
+    Add a custom ownership rule.
+
+    Args:
+        rule_type: "keyword" or "cfr"
+        pattern: Regex pattern to match
+        target_function: Target function name
+        weight: Weight for scoring
+        notes: Optional notes about the rule
+
+    Returns:
+        The new rule ID
+    """
+    with get_session() as session:
+        rule = OwnershipRule(
+            rule_type=rule_type,
+            pattern=pattern,
+            target_function=target_function,
+            weight=weight,
+            notes=notes,
+            is_active=True
+        )
+        session.add(rule)
+        session.commit()
+        session.refresh(rule)
+        return rule.id
+
+
+def get_custom_ownership_rules() -> list:
+    """
+    Get all custom ownership rules.
+
+    Returns:
+        List of rule dictionaries
+    """
+    with get_session() as session:
+        rules = session.query(OwnershipRule).filter(OwnershipRule.is_active == True).all()
+        return [r.to_dict() for r in rules]
+
+
+def get_ownership_summary() -> dict:
+    """
+    Get ownership summary statistics across all audits.
+
+    Returns:
+        Summary dictionary with statistics
+    """
+    with get_session() as session:
+        # Count total assignments
+        total = session.query(OwnershipAssignment).count()
+
+        if total == 0:
+            return {
+                "total_assignments": 0,
+                "by_function": {},
+                "by_confidence": {},
+                "manual_overrides": 0,
+                "audits_with_assignments": 0
+            }
+
+        # Count by function
+        from sqlalchemy import func
+        by_function_query = session.query(
+            OwnershipAssignment.primary_function,
+            func.count(OwnershipAssignment.id)
+        ).group_by(OwnershipAssignment.primary_function).all()
+        by_function = {row[0]: row[1] for row in by_function_query}
+
+        # Count by confidence
+        by_confidence_query = session.query(
+            OwnershipAssignment.confidence_score,
+            func.count(OwnershipAssignment.id)
+        ).group_by(OwnershipAssignment.confidence_score).all()
+        by_confidence = {row[0]: row[1] for row in by_confidence_query}
+
+        # Count manual overrides
+        manual_overrides = session.query(OwnershipAssignment).filter(
+            OwnershipAssignment.is_manual_override == True
+        ).count()
+
+        # Count audits with assignments
+        audits_with_assignments = session.query(
+            func.count(func.distinct(Question.audit_id))
+        ).join(OwnershipAssignment).scalar()
+
+        return {
+            "total_assignments": total,
+            "by_function": by_function,
+            "by_confidence": by_confidence,
+            "function_percentages": {f: round(c / total * 100, 1) for f, c in by_function.items()},
+            "manual_overrides": manual_overrides,
+            "audits_with_assignments": audits_with_assignments
+        }
 
 
 # Initialize database on import

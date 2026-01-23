@@ -318,6 +318,248 @@ def export_single_audit(audit_id):
         return jsonify({"error": f"Export format '{format_type}' not supported. Use 'json', 'csv', or 'xlsx'."}), 400
 
 
+# =============================================================================
+# OWNERSHIP ASSIGNMENT ENDPOINTS (Phase 2)
+# =============================================================================
+
+@app.route('/api/audits/<audit_id>/ownership', methods=['POST'])
+def assign_ownership(audit_id):
+    """
+    Run ownership assignment engine on an audit's questions.
+
+    This applies the deterministic rules-based decision tree to assign
+    each QID to one of the 7 authorized functions.
+    """
+    from ownership import OwnershipEngine, assign_ownership_to_audit
+
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Record not found"}), 404
+
+    questions = record.get("questions", [])
+    if not questions:
+        return jsonify({"error": "No questions found in audit"}), 400
+
+    try:
+        # Run ownership assignment
+        assignments, summary = assign_ownership_to_audit(questions)
+
+        # Save assignments to database
+        db.save_ownership_assignments(audit_id, assignments)
+
+        logger.info(f"Ownership assigned for audit {audit_id}: {summary['total']} questions")
+
+        return jsonify({
+            "audit_id": audit_id,
+            "assignments": assignments,
+            "summary": summary
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error assigning ownership: {e}", exc_info=True)
+        return jsonify({
+            "error": "Failed to assign ownership",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/audits/<audit_id>/ownership', methods=['GET'])
+def get_ownership(audit_id):
+    """Get ownership assignments for an audit."""
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Record not found"}), 404
+
+    # Get assignments from database
+    assignments = db.get_ownership_assignments(audit_id)
+
+    if not assignments:
+        return jsonify({
+            "audit_id": audit_id,
+            "message": "No ownership assignments found. Run POST /api/audits/{id}/ownership first.",
+            "assignments": [],
+            "summary": None
+        }), 200
+
+    # Calculate summary
+    total = len(assignments)
+    by_function = {}
+    by_confidence = {}
+
+    for a in assignments:
+        func = a.get("primary_function", "Unknown")
+        conf = a.get("confidence_score", "Unknown")
+        by_function[func] = by_function.get(func, 0) + 1
+        by_confidence[conf] = by_confidence.get(conf, 0) + 1
+
+    summary = {
+        "total": total,
+        "by_function": by_function,
+        "by_confidence": by_confidence,
+        "function_percentages": {f: round(c / total * 100, 1) for f, c in by_function.items()},
+        "low_confidence_count": by_confidence.get("Low", 0)
+    }
+
+    return jsonify({
+        "audit_id": audit_id,
+        "assignments": assignments,
+        "summary": summary
+    }), 200
+
+
+@app.route('/api/audits/<audit_id>/ownership/<qid>', methods=['PUT'])
+def override_ownership(audit_id, qid):
+    """
+    Manually override ownership assignment for a specific question.
+
+    Request body:
+    {
+        "primary_function": "Quality",
+        "supporting_functions": ["Training"],
+        "override_reason": "Per management decision...",
+        "override_by": "John Smith"
+    }
+    """
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Record not found"}), 404
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    primary_function = data.get("primary_function")
+    if not primary_function:
+        return jsonify({"error": "primary_function is required"}), 400
+
+    # Validate function is one of the 7 authorized
+    valid_functions = [
+        "Maintenance Planning",
+        "Maintenance Operations Center",
+        "Director of Maintenance",
+        "Aircraft Records",
+        "Quality",
+        "Training",
+        "Safety"
+    ]
+    if primary_function not in valid_functions:
+        return jsonify({
+            "error": f"Invalid function. Must be one of: {', '.join(valid_functions)}"
+        }), 400
+
+    try:
+        # Update assignment in database
+        updated = db.override_ownership_assignment(
+            audit_id=audit_id,
+            qid=qid,
+            primary_function=primary_function,
+            supporting_functions=data.get("supporting_functions", []),
+            override_reason=data.get("override_reason", "Manual override"),
+            override_by=data.get("override_by", "Unknown")
+        )
+
+        if not updated:
+            return jsonify({"error": "Question not found or no existing assignment"}), 404
+
+        logger.info(f"Ownership override for QID {qid}: {primary_function}")
+
+        return jsonify({
+            "message": "Ownership override successful",
+            "qid": qid,
+            "primary_function": primary_function,
+            "is_manual_override": True
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error overriding ownership: {e}", exc_info=True)
+        return jsonify({
+            "error": "Failed to override ownership",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/ownership/rules', methods=['GET'])
+def get_ownership_rules():
+    """Get all ownership assignment rules (keywords and CFR mappings)."""
+    from ownership import KEYWORD_RULES, CFR_RULES
+
+    return jsonify({
+        "keyword_rules": KEYWORD_RULES,
+        "cfr_rules": CFR_RULES,
+        "functions": [
+            "Maintenance Planning",
+            "Maintenance Operations Center",
+            "Director of Maintenance",
+            "Aircraft Records",
+            "Quality",
+            "Training",
+            "Safety"
+        ]
+    }), 200
+
+
+@app.route('/api/ownership/rules', methods=['POST'])
+def add_ownership_rule():
+    """
+    Add a custom ownership rule.
+
+    Request body:
+    {
+        "rule_type": "keyword",  // or "cfr"
+        "pattern": "\\bmy_keyword\\b",
+        "target_function": "Quality",
+        "weight": 1.5,
+        "notes": "Custom rule for XYZ"
+    }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    required_fields = ["rule_type", "pattern", "target_function"]
+    for field in required_fields:
+        if field not in data:
+            return jsonify({"error": f"{field} is required"}), 400
+
+    if data["rule_type"] not in ["keyword", "cfr"]:
+        return jsonify({"error": "rule_type must be 'keyword' or 'cfr'"}), 400
+
+    try:
+        rule_id = db.add_ownership_rule(
+            rule_type=data["rule_type"],
+            pattern=data["pattern"],
+            target_function=data["target_function"],
+            weight=data.get("weight", 1.0),
+            notes=data.get("notes")
+        )
+
+        return jsonify({
+            "message": "Rule added successfully",
+            "rule_id": rule_id
+        }), 201
+
+    except Exception as e:
+        logger.error(f"Error adding ownership rule: {e}", exc_info=True)
+        return jsonify({
+            "error": "Failed to add rule",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/ownership/summary', methods=['GET'])
+def get_ownership_summary():
+    """Get ownership summary across all audits."""
+    try:
+        summary = db.get_ownership_summary()
+        return jsonify(summary), 200
+    except Exception as e:
+        logger.error(f"Error getting ownership summary: {e}", exc_info=True)
+        return jsonify({
+            "error": "Failed to get summary",
+            "message": str(e)
+        }), 500
+
+
 if __name__ == '__main__':
     print("Starting FAA DCT Audit Application...")
     print("Backend API running on http://localhost:5000")
