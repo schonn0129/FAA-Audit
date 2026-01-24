@@ -266,4 +266,44 @@ export const api = {
     }
     return response.json();
   },
+
+  // =============================================================================
+  // APPLICABILITY ENDPOINTS
+  // =============================================================================
+
+  async getApplicability(auditId) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/applicability`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Fetch failed' }));
+      throw new Error(error.error || 'Failed to fetch applicability');
+    }
+    return response.json();
+  },
+
+  async setApplicability(auditId, qid, isApplicable, reason = '') {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/applicability/${qid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        is_applicable: isApplicable,
+        reason
+      })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Update failed' }));
+      throw new Error(error.error || 'Failed to update applicability');
+    }
+    return response.json();
+  },
+
+  async autoDetectApplicability(auditId) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/applicability/auto`, {
+      method: 'POST'
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Auto-detect failed' }));
+      throw new Error(error.error || 'Failed to auto-detect applicability');
+    }
+    return response.json();
+  },
 };

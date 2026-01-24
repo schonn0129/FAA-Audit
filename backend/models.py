@@ -107,6 +107,10 @@ class Question(Base):
                                        back_populates="question",
                                        uselist=False,
                                        cascade="all, delete-orphan")
+    applicability = relationship("QuestionApplicability",
+                                 back_populates="question",
+                                 uselist=False,
+                                 cascade="all, delete-orphan")
 
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
@@ -124,6 +128,35 @@ class Question(Base):
             "PDF_Page_Number": self.pdf_page_number,
             "PDF_Element_Block_ID": self.pdf_element_block_id,
             "Notes": self.notes or []
+        }
+
+
+class QuestionApplicability(Base):
+    """
+    Represents applicability status for a DCT question (per audit).
+    """
+    __tablename__ = 'question_applicability'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    question_id = Column(Integer, ForeignKey('questions.id'), nullable=False, unique=True)
+
+    is_applicable = Column(Boolean, default=True)
+    determined_by = Column(String(50), nullable=True)  # "auto" or "manual"
+    reason = Column(Text, nullable=True)
+    determined_date = Column(DateTime, default=datetime.utcnow)
+    last_modified_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    question = relationship("Question", back_populates="applicability")
+
+    def to_dict(self):
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "question_id": self.question_id,
+            "is_applicable": self.is_applicable,
+            "determined_by": self.determined_by,
+            "reason": self.reason,
+            "determined_date": self.determined_date.isoformat() if self.determined_date else None,
+            "last_modified_date": self.last_modified_date.isoformat() if self.last_modified_date else None
         }
 
 

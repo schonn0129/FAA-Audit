@@ -18,6 +18,7 @@ function App() {
   // Phase 2: Ownership state
   const [ownershipData, setOwnershipData] = useState(null);
   const [assigningOwnership, setAssigningOwnership] = useState(false);
+  const [applicabilityMap, setApplicabilityMap] = useState({});
 
   useEffect(() => {
     // Check backend connection on mount
@@ -101,6 +102,16 @@ function App() {
       const data = await api.getAudit(auditId);
       setSelectedAudit(data);
       setActiveView('questions');
+      try {
+        const applicability = await api.getApplicability(auditId);
+        const map = {};
+        (applicability.applicability || []).forEach((item) => {
+          if (item.qid) map[item.qid] = item;
+        });
+        setApplicabilityMap(map);
+      } catch (e) {
+        setApplicabilityMap({});
+      }
       // Also load ownership data if available
       try {
         const ownership = await api.getOwnershipAssignments(auditId);
@@ -153,6 +164,42 @@ function App() {
 
   const handleViewDeferred = () => {
     setActiveView('deferred');
+  };
+
+  const handleToggleApplicability = async (qid, makeApplicable) => {
+    if (!selectedAudit?.id || !qid) return;
+
+    let reason = '';
+    if (!makeApplicable) {
+      reason = window.prompt('Reason for Not Applicable (optional):', '') || '';
+    }
+
+    try {
+      await api.setApplicability(selectedAudit.id, qid, makeApplicable, reason);
+      const applicability = await api.getApplicability(selectedAudit.id);
+      const map = {};
+      (applicability.applicability || []).forEach((item) => {
+        if (item.qid) map[item.qid] = item;
+      });
+      setApplicabilityMap(map);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleAutoDetectApplicability = async () => {
+    if (!selectedAudit?.id) return;
+    try {
+      await api.autoDetectApplicability(selectedAudit.id);
+      const applicability = await api.getApplicability(selectedAudit.id);
+      const map = {};
+      (applicability.applicability || []).forEach((item) => {
+        if (item.qid) map[item.qid] = item;
+      });
+      setApplicabilityMap(map);
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   return (
@@ -307,45 +354,69 @@ function App() {
                       </div>
 
                       <div className="details-section">
-                        <h3>Questions ({selectedAudit.data.questions?.length || 0})</h3>
+                        <div className="questions-header">
+                          <h3>Questions ({selectedAudit.data.questions?.length || 0})</h3>
+                          <button
+                            className="btn-secondary"
+                            onClick={handleAutoDetectApplicability}
+                          >
+                            Auto-detect Applicability
+                          </button>
+                        </div>
                         <div className="questions-list">
-                          {selectedAudit.data.questions?.map((q, idx) => (
-                            <div key={idx} className="question-item">
-                              <div className="question-header">
-                                <span className="element-id">{q.Element_ID || 'N/A'}</span>
-                                {q.QID && <span className="qid">QID: {q.QID}</span>}
-                                {q.Question_Number && (
-                                  <span className="qnum">Q{q.Question_Number}</span>
-                                )}
-                                {q.PDF_Page_Number && (
-                                  <span className="page">Page {q.PDF_Page_Number}</span>
-                                )}
-                              </div>
-                              <div className="question-text">
-                                {q.Question_Text_Full || q.Question_Text_Condensed || 'No text'}
-                              </div>
-                              {q.Data_Collection_Guidance && (
-                                <div className="question-guidance">
-                                  <strong>Guidance:</strong> {q.Data_Collection_Guidance}
-                                </div>
-                              )}
-                              {q.Reference_Raw && (
-                                <div className="question-references">
-                                  <strong>References:</strong> {q.Reference_Raw}
-                                  {q.Reference_CFR_List?.length > 0 && (
-                                    <div className="cfr-refs">
-                                      CFR: {q.Reference_CFR_List.join(', ')}
-                                    </div>
+                          {selectedAudit.data.questions?.map((q, idx) => {
+                            const applicability = q.QID ? applicabilityMap[q.QID] : null;
+                            const isApplicable = applicability ? applicability.is_applicable : true;
+
+                            return (
+                              <div key={idx} className={`question-item ${!isApplicable ? 'not-applicable' : ''}`}>
+                                <div className="question-header">
+                                  <span className="element-id">{q.Element_ID || 'N/A'}</span>
+                                  {q.QID && <span className="qid">QID: {q.QID}</span>}
+                                  {q.Question_Number && (
+                                    <span className="qnum">Q{q.Question_Number}</span>
+                                  )}
+                                  {q.PDF_Page_Number && (
+                                    <span className="page">Page {q.PDF_Page_Number}</span>
+                                  )}
+                                  {!isApplicable && (
+                                    <span className="na-badge">Not Applicable</span>
+                                  )}
+                                  {q.QID && (
+                                    <button
+                                      className="btn-link"
+                                      onClick={() => handleToggleApplicability(q.QID, !isApplicable)}
+                                    >
+                                      {isApplicable ? 'Mark N/A' : 'Mark Applicable'}
+                                    </button>
                                   )}
                                 </div>
-                              )}
-                              {q.Notes?.length > 0 && (
-                                <div className="question-notes">
-                                  <strong>Notes:</strong> {q.Notes.join(', ')}
+                                <div className="question-text">
+                                  {q.Question_Text_Full || q.Question_Text_Condensed || 'No text'}
                                 </div>
-                              )}
-                            </div>
-                          ))}
+                                {q.Data_Collection_Guidance && (
+                                  <div className="question-guidance">
+                                    <strong>Guidance:</strong> {q.Data_Collection_Guidance}
+                                  </div>
+                                )}
+                                {q.Reference_Raw && (
+                                  <div className="question-references">
+                                    <strong>References:</strong> {q.Reference_Raw}
+                                    {q.Reference_CFR_List?.length > 0 && (
+                                      <div className="cfr-refs">
+                                        CFR: {q.Reference_CFR_List.join(', ')}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                {q.Notes?.length > 0 && (
+                                  <div className="question-notes">
+                                    <strong>Notes:</strong> {q.Notes.join(', ')}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
 

@@ -635,6 +635,63 @@ def get_ownership_summary():
 
 
 # =============================================================================
+# APPLICABILITY ENDPOINTS
+# =============================================================================
+
+@app.route('/api/audits/<audit_id>/applicability', methods=['GET'])
+def get_applicability(audit_id):
+    """Get applicability status for all questions in an audit."""
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Record not found"}), 404
+
+    results = db.get_applicability_for_audit(audit_id)
+    return jsonify({
+        "audit_id": audit_id,
+        "applicability": results
+    }), 200
+
+
+@app.route('/api/audits/<audit_id>/applicability/<qid>', methods=['PUT'])
+def set_applicability(audit_id, qid):
+    """Set applicability for a single QID (manual override)."""
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Record not found"}), 404
+
+    data = request.get_json() or {}
+    if "is_applicable" not in data:
+        return jsonify({"error": "is_applicable is required"}), 400
+
+    result = db.set_applicability(
+        audit_id=audit_id,
+        qid=qid,
+        is_applicable=bool(data.get("is_applicable")),
+        reason=data.get("reason", ""),
+        determined_by="manual"
+    )
+
+    if not result:
+        return jsonify({"error": "QID not found"}), 404
+
+    return jsonify(result), 200
+
+
+@app.route('/api/audits/<audit_id>/applicability/auto', methods=['POST'])
+def auto_applicability(audit_id):
+    """Auto-detect not applicable questions for an audit."""
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Record not found"}), 404
+
+    summary = db.auto_determine_applicability(audit_id)
+    return jsonify({
+        "audit_id": audit_id,
+        "summary": summary
+    }), 200
+
+
+# =============================================================================
 # AUDIT SCOPE ENDPOINTS (Phase 3)
 # =============================================================================
 
@@ -869,7 +926,7 @@ def export_audit_map(audit_id):
         return jsonify({"error": "No ownership assignments found. Run POST /api/audits/{id}/ownership first."}), 400
 
     format_type = request.args.get('format', 'xlsx')
-    map_rows, _, _ = map_builder.build_map_rows(audit_id)
+    map_rows, _, _, _ = map_builder.build_map_rows(audit_id)
     if not map_rows:
         return jsonify({"error": "No MAP rows available for current scope."}), 400
 
@@ -901,7 +958,8 @@ def export_audit_map(audit_id):
 
 if __name__ == '__main__':
     print("Starting FAA DCT Audit Application...")
-    print("Backend API running on http://localhost:5000")
-    print("API Documentation: http://localhost:5000/api/health")
+    port = int(os.getenv("BACKEND_PORT", "5000"))
+    print(f"Backend API running on http://localhost:{port}")
+    print(f"API Documentation: http://localhost:{port}/api/health")
     print("Database: SQLite (faa_audit.db)")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=port)

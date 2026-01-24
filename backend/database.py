@@ -17,7 +17,8 @@ from models import (
     OwnershipRule,
     AuditScope,
     Manual,
-    ManualSection
+    ManualSection,
+    QuestionApplicability
 )
 
 # Create engine
@@ -354,6 +355,127 @@ def get_manual_sections(manual_id: str) -> list:
             .all()
         )
         return [s.to_dict() for s in sections]
+
+
+# =============================================================================
+# APPLICABILITY FUNCTIONS
+# =============================================================================
+
+def get_applicability_for_audit(audit_id: str) -> list:
+    """
+    Get applicability status for all questions in an audit.
+    """
+    with get_session() as session:
+        rows = (
+            session.query(Question, QuestionApplicability)
+            .outerjoin(QuestionApplicability, QuestionApplicability.question_id == Question.id)
+            .filter(Question.audit_id == audit_id)
+            .all()
+        )
+
+        results = []
+        for question, applicability in rows:
+            results.append({
+                "qid": question.qid,
+                "question_id": question.id,
+                "is_applicable": applicability.is_applicable if applicability else True,
+                "determined_by": applicability.determined_by if applicability else None,
+                "reason": applicability.reason if applicability else None,
+                "last_modified_date": applicability.last_modified_date.isoformat()
+                if applicability and applicability.last_modified_date else None
+            })
+        return results
+
+
+def set_applicability(audit_id: str, qid: str, is_applicable: bool,
+                      reason: str = "", determined_by: str = "manual") -> dict:
+    """
+    Set applicability for a question. Manual updates override auto.
+    """
+    with get_session() as session:
+        question = session.query(Question).filter(
+            Question.audit_id == audit_id,
+            Question.qid == qid
+        ).first()
+
+        if not question:
+            return None
+
+        applicability = session.query(QuestionApplicability).filter(
+            QuestionApplicability.question_id == question.id
+        ).first()
+
+        if applicability:
+            if applicability.determined_by == "manual" and determined_by == "auto":
+                return applicability.to_dict()
+            applicability.is_applicable = is_applicable
+            applicability.reason = reason
+            applicability.determined_by = determined_by
+        else:
+            applicability = QuestionApplicability(
+                question_id=question.id,
+                is_applicable=is_applicable,
+                reason=reason,
+                determined_by=determined_by
+            )
+            session.add(applicability)
+
+        session.commit()
+        session.refresh(applicability)
+        return applicability.to_dict()
+
+
+def auto_determine_applicability(audit_id: str) -> dict:
+    """
+    Run auto applicability detection for all questions in an audit.
+    """
+    from applicability import detect_applicability
+
+    updated = 0
+    skipped_manual = 0
+
+    with get_session() as session:
+        questions = session.query(Question).filter(Question.audit_id == audit_id).all()
+        for question in questions:
+            text = " ".join(filter(None, [
+                question.question_text_full,
+                question.question_text_condensed,
+                question.data_collection_guidance
+            ]))
+            result = detect_applicability(text)
+            if not result:
+                continue
+
+            is_applicable, reason = result
+            applicability = session.query(QuestionApplicability).filter(
+                QuestionApplicability.question_id == question.id
+            ).first()
+
+            if applicability and applicability.determined_by == "manual":
+                skipped_manual += 1
+                continue
+
+            if applicability:
+                applicability.is_applicable = is_applicable
+                applicability.reason = reason
+                applicability.determined_by = "auto"
+            else:
+                applicability = QuestionApplicability(
+                    question_id=question.id,
+                    is_applicable=is_applicable,
+                    reason=reason,
+                    determined_by="auto"
+                )
+                session.add(applicability)
+
+            updated += 1
+
+        session.commit()
+
+    return {
+        "updated": updated,
+        "skipped_manual": skipped_manual
+    }
 
 
 # =============================================================================

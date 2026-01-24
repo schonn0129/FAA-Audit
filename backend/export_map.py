@@ -80,6 +80,8 @@ def export_map_to_csv(map_rows: List[Dict[str, Any]]) -> str:
         'GMM_Reference',
         'Other_Manual_References',
         'Evidence_Required',
+        'Applicability_Status',
+        'Applicability_Reason',
         'Audit_Finding',
         'Compliance_Status'
     ]
@@ -95,6 +97,8 @@ def export_map_to_csv(map_rows: List[Dict[str, Any]]) -> str:
             'GMM_Reference': row.get('GMM_Reference', ''),
             'Other_Manual_References': row.get('Other_Manual_References', ''),
             'Evidence_Required': row.get('Evidence_Required', ''),
+            'Applicability_Status': row.get('Applicability_Status', ''),
+            'Applicability_Reason': row.get('Applicability_Reason', ''),
             'Audit_Finding': row.get('Audit_Finding', ''),
             'Compliance_Status': row.get('Compliance_Status', '')
         })
@@ -289,6 +293,8 @@ def export_map_to_xlsx(map_rows: List[Dict[str, Any]]) -> bytes:
         'GMM_Reference',
         'Other_Manual_References',
         'Evidence_Required',
+        'Applicability_Status',
+        'Applicability_Reason',
         'Audit_Finding',
         'Compliance_Status'
     ]
@@ -310,10 +316,12 @@ def export_map_to_xlsx(map_rows: List[Dict[str, Any]]) -> bytes:
         ws.cell(row=row_idx, column=4, value=row.get('GMM_Reference', ''))
         ws.cell(row=row_idx, column=5, value=row.get('Other_Manual_References', ''))
         ws.cell(row=row_idx, column=6, value=row.get('Evidence_Required', ''))
-        ws.cell(row=row_idx, column=7, value=row.get('Audit_Finding', ''))
-        ws.cell(row=row_idx, column=8, value=row.get('Compliance_Status', ''))
+        ws.cell(row=row_idx, column=7, value=row.get('Applicability_Status', ''))
+        ws.cell(row=row_idx, column=8, value=row.get('Applicability_Reason', ''))
+        ws.cell(row=row_idx, column=9, value=row.get('Audit_Finding', ''))
+        ws.cell(row=row_idx, column=10, value=row.get('Compliance_Status', ''))
 
-    column_widths = [12, 80, 25, 25, 30, 50, 30, 20]
+    column_widths = [12, 80, 25, 25, 30, 45, 20, 35, 30, 20]
     for col, width in enumerate(column_widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
 

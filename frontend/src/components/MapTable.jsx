@@ -31,6 +31,8 @@ function MapTable({ auditId }) {
     map_rows = [],
     in_scope_functions = [],
     total_rows = 0,
+    in_scope_total = 0,
+    not_applicable_count = 0,
     manuals_used = []
   } = mapData;
 
@@ -42,6 +44,11 @@ function MapTable({ auditId }) {
           <p className="map-subtitle">
             In-scope QIDs: {total_rows} across {in_scope_functions.length} functions
           </p>
+          {not_applicable_count > 0 && (
+            <p className="map-subtitle">
+              Not Applicable: {not_applicable_count} of {in_scope_total || total_rows}
+            </p>
+          )}
         </div>
         <div className="map-actions">
           <button className="btn-secondary" onClick={() => handleExport('csv')}>
@@ -85,6 +92,8 @@ function MapTable({ auditId }) {
               <th>GMM Reference</th>
               <th>Other Manual References</th>
               <th>Evidence Required</th>
+              <th>Applicability Status</th>
+              <th>Applicability Reason</th>
               <th>Audit Finding</th>
               <th>Compliance Status</th>
             </tr>
@@ -98,13 +107,15 @@ function MapTable({ auditId }) {
                 <td>{row.GMM_Reference}</td>
                 <td>{row.Other_Manual_References}</td>
                 <td>{row.Evidence_Required}</td>
+                <td>{row.Applicability_Status}</td>
+                <td>{row.Applicability_Reason}</td>
                 <td>{row.Audit_Finding}</td>
                 <td>{row.Compliance_Status}</td>
               </tr>
             ))}
             {map_rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="empty-cell">
+                <td colSpan={10} className="empty-cell">
                   No MAP rows for current scope.
                 </td>
               </tr>
