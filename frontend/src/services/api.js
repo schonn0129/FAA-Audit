@@ -98,4 +98,111 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}/health`);
     return response.json();
   },
+
+  // =============================================================================
+  // OWNERSHIP ENDPOINTS (Phase 2)
+  // =============================================================================
+
+  /**
+   * Run ownership assignment for an audit
+   */
+  async runOwnershipAssignment(auditId) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/ownership`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Assignment failed' }));
+      throw new Error(error.error || 'Failed to run ownership assignment');
+    }
+    return response.json();
+  },
+
+  /**
+   * Get ownership assignments for an audit
+   */
+  async getOwnershipAssignments(auditId) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/ownership`);
+    if (!response.ok) throw new Error('Failed to fetch ownership assignments');
+    return response.json();
+  },
+
+  /**
+   * Override ownership assignment for a question
+   */
+  async overrideOwnership(auditId, qid, data) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/ownership/${qid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Override failed' }));
+      throw new Error(error.error || 'Failed to override ownership');
+    }
+    return response.json();
+  },
+
+  // =============================================================================
+  // SCOPE ENDPOINTS (Phase 3)
+  // =============================================================================
+
+  /**
+   * Get scope configuration for an audit
+   */
+  async getAuditScope(auditId) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/scope`);
+    if (!response.ok) throw new Error('Failed to fetch audit scope');
+    return response.json();
+  },
+
+  /**
+   * Save scope configuration for an audit
+   */
+  async saveAuditScope(auditId, scopeData) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/scope`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(scopeData),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Save failed' }));
+      throw new Error(error.error || 'Failed to save scope');
+    }
+    return response.json();
+  },
+
+  /**
+   * Delete scope configuration (reset to all functions)
+   */
+  async deleteAuditScope(auditId) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/scope`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to delete scope');
+    return response.json();
+  },
+
+  /**
+   * Get coverage metrics for an audit
+   */
+  async getCoverageMetrics(auditId) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/coverage`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Fetch failed' }));
+      throw new Error(error.error || 'Failed to fetch coverage metrics');
+    }
+    return response.json();
+  },
+
+  /**
+   * Get deferred items report for an audit
+   */
+  async getDeferredItems(auditId) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/deferred`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Fetch failed' }));
+      throw new Error(error.error || 'Failed to fetch deferred items');
+    }
+    return response.json();
+  },
 };

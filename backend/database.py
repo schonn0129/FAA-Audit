@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker, scoped_session
 from contextlib import contextmanager
 
 from config import DATABASE_URL
-from models import Base, Audit, Question, Finding, ExtractedTable, OwnershipAssignment, OwnershipRule
+from models import Base, Audit, Question, Finding, ExtractedTable, OwnershipAssignment, OwnershipRule, AuditScope
 
 # Create engine
 engine = create_engine(DATABASE_URL, echo=False)
@@ -503,6 +503,142 @@ def get_ownership_summary() -> dict:
             "manual_overrides": manual_overrides,
             "audits_with_assignments": audits_with_assignments
         }
+
+
+# =============================================================================
+# AUDIT SCOPE FUNCTIONS (Phase 3)
+# =============================================================================
+
+def save_audit_scope(audit_id: str, in_scope_functions: list,
+                     scope_name: str = None, scope_rationale: str = None,
+                     created_by: str = None) -> dict:
+    """
+    Save or update audit scope configuration.
+
+    Args:
+        audit_id: The audit ID
+        in_scope_functions: List of function names that are in-scope
+        scope_name: Optional name for the scope
+        scope_rationale: Optional rationale for scope selection
+        created_by: Person creating the scope
+
+    Returns:
+        Dictionary representation of the saved scope
+    """
+    from datetime import datetime
+
+    with get_session() as session:
+        # Verify audit exists
+        audit = session.query(Audit).filter(Audit.id == audit_id).first()
+        if not audit:
+            return None
+
+        # Check for existing scope
+        existing = session.query(AuditScope).filter(
+            AuditScope.audit_id == audit_id
+        ).first()
+
+        if existing:
+            # Update existing scope
+            existing.in_scope_functions = in_scope_functions
+            existing.scope_name = scope_name
+            existing.scope_rationale = scope_rationale
+            existing.last_modified_date = datetime.utcnow()
+            session.commit()
+            session.refresh(existing)
+            return existing.to_dict()
+        else:
+            # Create new scope
+            scope = AuditScope(
+                audit_id=audit_id,
+                in_scope_functions=in_scope_functions,
+                scope_name=scope_name,
+                scope_rationale=scope_rationale,
+                created_by=created_by
+            )
+            session.add(scope)
+            session.commit()
+            session.refresh(scope)
+            return scope.to_dict()
+
+
+def get_audit_scope(audit_id: str) -> dict:
+    """
+    Get audit scope configuration.
+
+    Args:
+        audit_id: The audit ID
+
+    Returns:
+        Dictionary with scope info, or None if no scope defined
+    """
+    with get_session() as session:
+        scope = session.query(AuditScope).filter(
+            AuditScope.audit_id == audit_id
+        ).first()
+
+        if scope:
+            return scope.to_dict()
+        return None
+
+
+def delete_audit_scope(audit_id: str) -> bool:
+    """
+    Delete audit scope (reset to all functions).
+
+    Args:
+        audit_id: The audit ID
+
+    Returns:
+        True if deleted, False if not found
+    """
+    with get_session() as session:
+        scope = session.query(AuditScope).filter(
+            AuditScope.audit_id == audit_id
+        ).first()
+
+        if scope:
+            session.delete(scope)
+            session.commit()
+            return True
+        return False
+
+
+def get_scoped_ownership_assignments(audit_id: str) -> dict:
+    """
+    Get ownership assignments with scope filtering applied.
+
+    Args:
+        audit_id: The audit ID
+
+    Returns:
+        Dictionary with in_scope and deferred assignments
+    """
+    from scoping import filter_assignments_by_scope, VALID_FUNCTIONS
+
+    # Get all assignments
+    assignments = get_ownership_assignments(audit_id)
+
+    # Get scope
+    scope = get_audit_scope(audit_id)
+
+    if scope and scope.get("in_scope_functions"):
+        in_scope_functions = scope["in_scope_functions"]
+    else:
+        # No scope defined = all functions in scope
+        in_scope_functions = VALID_FUNCTIONS
+
+    in_scope, deferred = filter_assignments_by_scope(assignments, in_scope_functions)
+
+    return {
+        "audit_id": audit_id,
+        "in_scope_functions": in_scope_functions,
+        "in_scope_assignments": in_scope,
+        "deferred_assignments": deferred,
+        "in_scope_count": len(in_scope),
+        "deferred_count": len(deferred),
+        "total": len(assignments)
+    }
 
 
 # Initialize database on import

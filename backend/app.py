@@ -560,6 +560,202 @@ def get_ownership_summary():
         }), 500
 
 
+# =============================================================================
+# AUDIT SCOPE ENDPOINTS (Phase 3)
+# =============================================================================
+
+@app.route('/api/audits/<audit_id>/scope', methods=['GET'])
+def get_audit_scope(audit_id):
+    """
+    Get the current scope configuration for an audit.
+
+    Returns the list of in-scope functions and available functions.
+    """
+    from scoping import get_available_functions
+
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Audit not found"}), 404
+
+    scope = db.get_audit_scope(audit_id)
+
+    return jsonify({
+        "audit_id": audit_id,
+        "scope": scope,
+        "available_functions": get_available_functions()
+    }), 200
+
+
+@app.route('/api/audits/<audit_id>/scope', methods=['POST'])
+def create_audit_scope(audit_id):
+    """
+    Create or update the scope configuration for an audit.
+
+    Request body:
+    {
+        "in_scope_functions": ["Maintenance Planning", "Aircraft Records"],
+        "scope_name": "Q1 2026 Maintenance Focus",
+        "scope_rationale": "Per annual audit plan",
+        "created_by": "John Smith"
+    }
+    """
+    from scoping import validate_scope_functions
+
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Audit not found"}), 404
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    in_scope_functions = data.get("in_scope_functions")
+    if not in_scope_functions:
+        return jsonify({"error": "in_scope_functions is required"}), 400
+
+    # Validate functions
+    is_valid, invalid = validate_scope_functions(in_scope_functions)
+    if not is_valid:
+        return jsonify({
+            "error": "Invalid functions specified",
+            "invalid_functions": invalid
+        }), 400
+
+    try:
+        scope = db.save_audit_scope(
+            audit_id=audit_id,
+            in_scope_functions=in_scope_functions,
+            scope_name=data.get("scope_name"),
+            scope_rationale=data.get("scope_rationale"),
+            created_by=data.get("created_by")
+        )
+
+        logger.info(f"Scope set for audit {audit_id}: {len(in_scope_functions)} functions in scope")
+
+        return jsonify({
+            "message": "Scope saved successfully",
+            "audit_id": audit_id,
+            "scope": scope
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error saving scope: {e}", exc_info=True)
+        return jsonify({
+            "error": "Failed to save scope",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/audits/<audit_id>/scope', methods=['DELETE'])
+def delete_audit_scope(audit_id):
+    """
+    Delete the scope configuration (reset to all functions in scope).
+    """
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Audit not found"}), 404
+
+    deleted = db.delete_audit_scope(audit_id)
+
+    if deleted:
+        logger.info(f"Scope deleted for audit {audit_id}")
+        return jsonify({
+            "message": "Scope deleted. All functions are now in scope.",
+            "audit_id": audit_id
+        }), 200
+    else:
+        return jsonify({
+            "message": "No scope was defined for this audit.",
+            "audit_id": audit_id
+        }), 200
+
+
+@app.route('/api/audits/<audit_id>/coverage', methods=['GET'])
+def get_audit_coverage(audit_id):
+    """
+    Get coverage metrics for an audit based on its scope.
+
+    Returns breakdown of in-scope vs. deferred QIDs by function.
+    """
+    from scoping import calculate_coverage_metrics, calculate_accountability_check, VALID_FUNCTIONS
+
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Audit not found"}), 404
+
+    # Get assignments
+    assignments = db.get_ownership_assignments(audit_id)
+
+    if not assignments:
+        return jsonify({
+            "error": "No ownership assignments found. Run POST /api/audits/{id}/ownership first.",
+            "audit_id": audit_id
+        }), 400
+
+    # Get scope
+    scope = db.get_audit_scope(audit_id)
+    if scope:
+        in_scope_functions = scope.get("in_scope_functions", VALID_FUNCTIONS)
+    else:
+        in_scope_functions = VALID_FUNCTIONS
+
+    # Calculate metrics
+    metrics = calculate_coverage_metrics(assignments, in_scope_functions)
+    accountability = calculate_accountability_check(assignments)
+
+    return jsonify({
+        "audit_id": audit_id,
+        "total_qids": metrics.total_qids,
+        "coverage": {
+            "overall_percentage": metrics.overall_percentage,
+            "in_scope_count": metrics.in_scope_count,
+            "deferred_count": metrics.deferred_count,
+            "by_function": metrics.by_function
+        },
+        "in_scope_functions": in_scope_functions,
+        "accountability_check": accountability
+    }), 200
+
+
+@app.route('/api/audits/<audit_id>/deferred', methods=['GET'])
+def get_deferred_items(audit_id):
+    """
+    Get deferred items report for PDF appendix generation.
+
+    Lists all QIDs that are NOT in scope for this audit cycle,
+    along with their assigned owners.
+    """
+    from scoping import generate_deferred_report, VALID_FUNCTIONS
+
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Audit not found"}), 404
+
+    # Get assignments
+    assignments = db.get_ownership_assignments(audit_id)
+
+    if not assignments:
+        return jsonify({
+            "error": "No ownership assignments found. Run POST /api/audits/{id}/ownership first.",
+            "audit_id": audit_id
+        }), 400
+
+    # Get scope
+    scope = db.get_audit_scope(audit_id)
+    if scope:
+        in_scope_functions = scope.get("in_scope_functions", VALID_FUNCTIONS)
+        scope_rationale = scope.get("scope_rationale", "")
+    else:
+        in_scope_functions = VALID_FUNCTIONS
+        scope_rationale = "No scope defined - all functions in scope"
+
+    # Generate report
+    report = generate_deferred_report(assignments, in_scope_functions, scope_rationale)
+    report["audit_id"] = audit_id
+
+    return jsonify(report), 200
+
+
 if __name__ == '__main__':
     print("Starting FAA DCT Audit Application...")
     print("Backend API running on http://localhost:5000")

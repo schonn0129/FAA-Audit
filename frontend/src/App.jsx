@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { api } from './services/api';
+import ScopeSelector from './components/ScopeSelector';
+import CoverageDashboard from './components/CoverageDashboard';
+import DeferredItemsList from './components/DeferredItemsList';
 import './App.css';
 
 function App() {
@@ -8,6 +11,11 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
+  // Phase 3: Active view tab
+  const [activeView, setActiveView] = useState('questions'); // 'questions' | 'ownership' | 'scope' | 'coverage' | 'deferred'
+  // Phase 2: Ownership state
+  const [ownershipData, setOwnershipData] = useState(null);
+  const [assigningOwnership, setAssigningOwnership] = useState(false);
 
   useEffect(() => {
     // Check backend connection on mount
@@ -50,19 +58,19 @@ function App() {
     // Check file type (case-insensitive)
     const fileName = file.name.toLowerCase();
     const fileType = file.type;
-    
+
     if (!fileName.endsWith('.pdf') && fileType !== 'application/pdf' && fileType !== '') {
       setError(`Invalid file type. Expected PDF, got: ${file.name} (type: ${fileType || 'unknown'})`);
       return;
     }
-    
+
     // Check file size (50MB limit)
     const maxSize = 50 * 1024 * 1024; // 50MB
     if (file.size > maxSize) {
       setError(`File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds 50MB limit`);
       return;
     }
-    
+
     if (file.size === 0) {
       setError('File is empty');
       return;
@@ -90,6 +98,14 @@ function App() {
       setLoading(true);
       const data = await api.getAudit(auditId);
       setSelectedAudit(data);
+      setActiveView('questions');
+      // Also load ownership data if available
+      try {
+        const ownership = await api.getOwnershipAssignments(auditId);
+        setOwnershipData(ownership);
+      } catch (e) {
+        setOwnershipData(null);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -104,11 +120,37 @@ function App() {
       await api.deleteAudit(auditId);
       if (selectedAudit?.id === auditId) {
         setSelectedAudit(null);
+        setOwnershipData(null);
       }
       await loadAudits();
     } catch (err) {
       setError(err.message);
     }
+  };
+
+  const handleRunOwnership = async () => {
+    if (!selectedAudit?.id) return;
+
+    try {
+      setAssigningOwnership(true);
+      setError(null);
+      const result = await api.runOwnershipAssignment(selectedAudit.id);
+      setOwnershipData(result);
+      setActiveView('ownership');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAssigningOwnership(false);
+    }
+  };
+
+  const handleScopeChange = (selectedFunctions) => {
+    // Refresh coverage view when scope changes
+    setActiveView('coverage');
+  };
+
+  const handleViewDeferred = () => {
+    setActiveView('deferred');
   };
 
   return (
@@ -178,9 +220,8 @@ function App() {
                   </div>
                   {audit.summary && (
                     <div className="audit-item-summary">
-                      <span>📄 {audit.summary.pages} pages</span>
-                      <span>❓ {audit.summary.questions} questions</span>
-                      <span>📊 {audit.summary.tables} tables</span>
+                      <span>Pages: {audit.summary.pages}</span>
+                      <span>Questions: {audit.summary.questions}</span>
                     </div>
                   )}
                 </div>
@@ -189,88 +230,228 @@ function App() {
           </div>
 
           <div className="audit-details">
-            <h2>Audit Details</h2>
             {!selectedAudit && (
               <div className="empty-state">Select an audit to view details</div>
             )}
             {selectedAudit && typeof selectedAudit === 'object' && selectedAudit.data && (
-              <div className="audit-details-content">
-                <div className="details-section">
-                  <h3>Metadata</h3>
-                  <div className="metadata-grid">
-                    <div>
-                      <strong>Filename:</strong> {selectedAudit.filename}
-                    </div>
-                    <div>
-                      <strong>Status:</strong> {selectedAudit.status}
-                    </div>
-                    <div>
-                      <strong>Pages:</strong> {selectedAudit.data.metadata?.page_count || 0}
-                    </div>
-                    <div>
-                      <strong>Uploaded:</strong>{' '}
-                      {new Date(selectedAudit.uploaded_at).toLocaleString()}
-                    </div>
-                  </div>
+              <>
+                {/* Navigation Tabs */}
+                <div className="details-tabs">
+                  <button
+                    className={`tab ${activeView === 'questions' ? 'active' : ''}`}
+                    onClick={() => setActiveView('questions')}
+                  >
+                    Questions
+                  </button>
+                  <button
+                    className={`tab ${activeView === 'ownership' ? 'active' : ''}`}
+                    onClick={() => setActiveView('ownership')}
+                  >
+                    Ownership
+                  </button>
+                  <button
+                    className={`tab ${activeView === 'scope' ? 'active' : ''}`}
+                    onClick={() => setActiveView('scope')}
+                  >
+                    Scope
+                  </button>
+                  <button
+                    className={`tab ${activeView === 'coverage' ? 'active' : ''}`}
+                    onClick={() => setActiveView('coverage')}
+                  >
+                    Coverage
+                  </button>
+                  <button
+                    className={`tab ${activeView === 'deferred' ? 'active' : ''}`}
+                    onClick={() => setActiveView('deferred')}
+                  >
+                    Deferred
+                  </button>
                 </div>
 
-                <div className="details-section">
-                  <h3>Questions ({selectedAudit.data.questions?.length || 0})</h3>
-                  <div className="questions-list">
-                    {selectedAudit.data.questions?.map((q, idx) => (
-                      <div key={idx} className="question-item">
-                        <div className="question-header">
-                          <span className="element-id">{q.Element_ID || 'N/A'}</span>
-                          {q.QID && <span className="qid">QID: {q.QID}</span>}
-                          {q.Question_Number && (
-                            <span className="qnum">Q{q.Question_Number}</span>
-                          )}
-                          {q.PDF_Page_Number && (
-                            <span className="page">Page {q.PDF_Page_Number}</span>
-                          )}
+                <div className="audit-details-content">
+                  {/* Questions View */}
+                  {activeView === 'questions' && (
+                    <>
+                      <div className="details-section">
+                        <h3>Metadata</h3>
+                        <div className="metadata-grid">
+                          <div>
+                            <strong>Filename:</strong> {selectedAudit.filename}
+                          </div>
+                          <div>
+                            <strong>Status:</strong> {selectedAudit.status}
+                          </div>
+                          <div>
+                            <strong>Pages:</strong> {selectedAudit.data.metadata?.page_count || 0}
+                          </div>
+                          <div>
+                            <strong>Uploaded:</strong>{' '}
+                            {new Date(selectedAudit.uploaded_at).toLocaleString()}
+                          </div>
                         </div>
-                        <div className="question-text">
-                          {q.Question_Text_Full || q.Question_Text_Condensed || 'No text'}
-                        </div>
-                        {q.Data_Collection_Guidance && (
-                          <div className="question-guidance">
-                            <strong>Guidance:</strong> {q.Data_Collection_Guidance}
-                          </div>
-                        )}
-                        {q.Reference_Raw && (
-                          <div className="question-references">
-                            <strong>References:</strong> {q.Reference_Raw}
-                            {q.Reference_CFR_List?.length > 0 && (
-                              <div className="cfr-refs">
-                                CFR: {q.Reference_CFR_List.join(', ')}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {q.Notes?.length > 0 && (
-                          <div className="question-notes">
-                            <strong>Notes:</strong> {q.Notes.join(', ')}
-                          </div>
-                        )}
                       </div>
-                    ))}
-                  </div>
-                </div>
 
-                {selectedAudit.data.findings?.length > 0 && (
-                  <div className="details-section">
-                    <h3>Findings ({selectedAudit.data.findings.length})</h3>
-                    <div className="findings-list">
-                      {selectedAudit.data.findings.map((f, idx) => (
-                        <div key={idx} className="finding-item">
-                          <strong>Finding {f.number}:</strong> {f.description}
-                          {f.severity && <span className="severity">{f.severity}</span>}
+                      <div className="details-section">
+                        <h3>Questions ({selectedAudit.data.questions?.length || 0})</h3>
+                        <div className="questions-list">
+                          {selectedAudit.data.questions?.map((q, idx) => (
+                            <div key={idx} className="question-item">
+                              <div className="question-header">
+                                <span className="element-id">{q.Element_ID || 'N/A'}</span>
+                                {q.QID && <span className="qid">QID: {q.QID}</span>}
+                                {q.Question_Number && (
+                                  <span className="qnum">Q{q.Question_Number}</span>
+                                )}
+                                {q.PDF_Page_Number && (
+                                  <span className="page">Page {q.PDF_Page_Number}</span>
+                                )}
+                              </div>
+                              <div className="question-text">
+                                {q.Question_Text_Full || q.Question_Text_Condensed || 'No text'}
+                              </div>
+                              {q.Data_Collection_Guidance && (
+                                <div className="question-guidance">
+                                  <strong>Guidance:</strong> {q.Data_Collection_Guidance}
+                                </div>
+                              )}
+                              {q.Reference_Raw && (
+                                <div className="question-references">
+                                  <strong>References:</strong> {q.Reference_Raw}
+                                  {q.Reference_CFR_List?.length > 0 && (
+                                    <div className="cfr-refs">
+                                      CFR: {q.Reference_CFR_List.join(', ')}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {q.Notes?.length > 0 && (
+                                <div className="question-notes">
+                                  <strong>Notes:</strong> {q.Notes.join(', ')}
+                                </div>
+                              )}
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      </div>
+
+                      {selectedAudit.data.findings?.length > 0 && (
+                        <div className="details-section">
+                          <h3>Findings ({selectedAudit.data.findings.length})</h3>
+                          <div className="findings-list">
+                            {selectedAudit.data.findings.map((f, idx) => (
+                              <div key={idx} className="finding-item">
+                                <strong>Finding {f.number}:</strong> {f.description}
+                                {f.severity && <span className="severity">{f.severity}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* Ownership View */}
+                  {activeView === 'ownership' && (
+                    <div className="details-section">
+                      <h3>Ownership Assignments</h3>
+
+                      {!ownershipData?.assignments?.length && (
+                        <div className="ownership-empty">
+                          <p>No ownership assignments yet.</p>
+                          <button
+                            onClick={handleRunOwnership}
+                            disabled={assigningOwnership}
+                            className="btn-primary"
+                          >
+                            {assigningOwnership ? 'Assigning...' : 'Run Ownership Assignment'}
+                          </button>
+                        </div>
+                      )}
+
+                      {ownershipData?.assignments?.length > 0 && (
+                        <>
+                          <div className="ownership-summary">
+                            <h4>Summary</h4>
+                            <div className="summary-grid">
+                              <div>
+                                <strong>Total Assigned:</strong> {ownershipData.summary?.total || 0}
+                              </div>
+                              {ownershipData.summary?.by_function && (
+                                <div className="function-breakdown">
+                                  {Object.entries(ownershipData.summary.by_function).map(([func, count]) => (
+                                    <span key={func} className="function-count">
+                                      {func}: {count}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <button
+                              onClick={handleRunOwnership}
+                              disabled={assigningOwnership}
+                              className="btn-secondary"
+                            >
+                              {assigningOwnership ? 'Re-assigning...' : 'Re-run Assignment'}
+                            </button>
+                          </div>
+
+                          <div className="ownership-list">
+                            {ownershipData.assignments.map((a, idx) => (
+                              <div key={idx} className="ownership-item">
+                                <div className="ownership-header">
+                                  <span className="qid">QID: {a.qid}</span>
+                                  <span className={`confidence ${a.confidence_score?.toLowerCase()}`}>
+                                    {a.confidence_score}
+                                  </span>
+                                </div>
+                                <div className="ownership-function">
+                                  <strong>Owner:</strong> {a.primary_function}
+                                  {a.supporting_functions?.length > 0 && (
+                                    <span className="supporting">
+                                      (Supporting: {a.supporting_functions.join(', ')})
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="ownership-rationale">
+                                  {a.rationale}
+                                </div>
+                                {a.is_manual_override && (
+                                  <div className="override-badge">Manual Override</div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+
+                  {/* Scope Selection View */}
+                  {activeView === 'scope' && (
+                    <ScopeSelector
+                      auditId={selectedAudit.id}
+                      onScopeChange={handleScopeChange}
+                    />
+                  )}
+
+                  {/* Coverage Dashboard View */}
+                  {activeView === 'coverage' && (
+                    <CoverageDashboard
+                      auditId={selectedAudit.id}
+                      onViewDeferred={handleViewDeferred}
+                    />
+                  )}
+
+                  {/* Deferred Items View */}
+                  {activeView === 'deferred' && (
+                    <DeferredItemsList
+                      auditId={selectedAudit.id}
+                      onClose={() => setActiveView('coverage')}
+                    />
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>

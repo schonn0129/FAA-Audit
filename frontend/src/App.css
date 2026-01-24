@@ -350,3 +350,867 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* =============================================================================
+   Navigation Tabs (Phase 3)
+   ============================================================================= */
+
+.details-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 0;
+}
+
+.details-tabs .tab {
+  padding: 0.75rem 1.25rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #666;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.2s;
+}
+
+.details-tabs .tab:hover {
+  color: #667eea;
+  background: #f8f9ff;
+}
+
+.details-tabs .tab.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
+}
+
+/* =============================================================================
+   Buttons
+   ============================================================================= */
+
+.btn-primary {
+  padding: 0.75rem 1.5rem;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.btn-primary:hover {
+  background: #5568d3;
+}
+
+.btn-primary:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  padding: 0.5rem 1rem;
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+  background: #e0e0e0;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  padding: 0.5rem 1rem;
+  background: #fee;
+  color: #c33;
+  border: 1px solid #fcc;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.btn-danger:hover {
+  background: #fdd;
+}
+
+.btn-small {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.btn-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #999;
+  line-height: 1;
+}
+
+.btn-close:hover {
+  color: #333;
+}
+
+/* =============================================================================
+   Ownership View (Phase 2)
+   ============================================================================= */
+
+.ownership-empty {
+  text-align: center;
+  padding: 2rem;
+}
+
+.ownership-empty p {
+  margin-bottom: 1rem;
+  color: #666;
+}
+
+.ownership-summary {
+  background: #f8f9ff;
+  padding: 1rem;
+  border-radius: 4px;
+  margin-bottom: 1.5rem;
+}
+
+.ownership-summary h4 {
+  margin-bottom: 0.75rem;
+  color: #667eea;
+}
+
+.summary-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.function-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.function-count {
+  background: #e3e8fc;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.ownership-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ownership-item {
+  padding: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fafafa;
+}
+
+.ownership-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.ownership-function {
+  margin-bottom: 0.5rem;
+}
+
+.supporting {
+  color: #666;
+  font-size: 0.9rem;
+  margin-left: 0.5rem;
+}
+
+.ownership-rationale {
+  font-size: 0.9rem;
+  color: #666;
+  font-style: italic;
+}
+
+.confidence {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.confidence.high {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.confidence.medium {
+  background: #fff3e0;
+  color: #ef6c00;
+}
+
+.confidence.low {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.override-badge {
+  display: inline-block;
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: #9c27b0;
+  color: white;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+/* =============================================================================
+   Scope Selector (Phase 3)
+   ============================================================================= */
+
+.scope-selector {
+  padding: 1rem;
+}
+
+.scope-selector.loading {
+  text-align: center;
+  color: #666;
+}
+
+.scope-header {
+  margin-bottom: 1.5rem;
+}
+
+.scope-header h3 {
+  margin-bottom: 0.5rem;
+  color: #667eea;
+}
+
+.scope-description {
+  color: #666;
+  font-size: 0.95rem;
+}
+
+.scope-error {
+  background: #fee;
+  color: #c33;
+  padding: 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+.scope-metadata {
+  margin-bottom: 1.5rem;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #333;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.scope-actions-top {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.scope-count {
+  margin-left: auto;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.function-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.function-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.function-checkbox:hover {
+  background: #f8f9ff;
+  border-color: #667eea;
+}
+
+.function-checkbox input {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.function-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.status-badge {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.status-badge.in-scope {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.status-badge.deferred {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.scope-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.scope-saved-notice {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-radius: 4px;
+  text-align: center;
+}
+
+/* =============================================================================
+   Coverage Dashboard (Phase 3)
+   ============================================================================= */
+
+.coverage-dashboard {
+  padding: 1rem;
+}
+
+.coverage-dashboard.loading,
+.coverage-dashboard.error {
+  text-align: center;
+  padding: 2rem;
+}
+
+.error-message {
+  color: #c33;
+  margin-bottom: 1rem;
+}
+
+.coverage-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.coverage-header h3 {
+  color: #667eea;
+  margin: 0;
+}
+
+.coverage-overview {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+  background: #f8f9ff;
+  border-radius: 8px;
+}
+
+.coverage-percentage {
+  text-align: center;
+}
+
+.percentage-circle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.percentage-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.percentage-label {
+  font-size: 0.75rem;
+  opacity: 0.9;
+}
+
+.coverage-counts {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.count-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.count-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.count-item.in-scope .count-value {
+  color: #2e7d32;
+}
+
+.count-item.deferred .count-value {
+  color: #666;
+}
+
+.count-item.total .count-value {
+  color: #667eea;
+}
+
+.count-label {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.coverage-bar-container {
+  margin-bottom: 1.5rem;
+}
+
+.coverage-bar {
+  display: flex;
+  height: 24px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f5f5f5;
+}
+
+.coverage-bar-fill.in-scope {
+  background: linear-gradient(90deg, #4caf50 0%, #66bb6a 100%);
+}
+
+.coverage-bar-fill.deferred {
+  background: #e0e0e0;
+}
+
+.coverage-bar-legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.legend-item.in-scope {
+  color: #2e7d32;
+}
+
+.legend-item.deferred {
+  color: #666;
+}
+
+.accountability-check {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 4px;
+  margin-bottom: 1.5rem;
+}
+
+.accountability-check.success {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.accountability-check.warning {
+  background: #fff3e0;
+  color: #ef6c00;
+}
+
+.check-icon {
+  font-size: 1.25rem;
+}
+
+.function-breakdown {
+  margin-bottom: 1.5rem;
+}
+
+.function-breakdown h4 {
+  margin-bottom: 1rem;
+  color: #667eea;
+}
+
+.function-table {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.table-header,
+.table-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 0.75fr 1fr;
+  padding: 0.75rem;
+  gap: 0.5rem;
+}
+
+.table-header {
+  background: #f5f5f5;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.table-row {
+  border-top: 1px solid #e0e0e0;
+}
+
+.table-row.in-scope {
+  background: #f8fff8;
+}
+
+.table-row.deferred {
+  background: #fafafa;
+}
+
+.scope-summary {
+  margin-bottom: 1.5rem;
+}
+
+.scope-summary h4 {
+  margin-bottom: 0.75rem;
+  color: #667eea;
+}
+
+.scope-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.scope-tag {
+  padding: 0.35rem 0.75rem;
+  background: #e3e8fc;
+  color: #667eea;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.deferred-action {
+  text-align: center;
+  padding: 1.5rem;
+  background: #f8f9ff;
+  border-radius: 4px;
+}
+
+.deferred-note {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+/* =============================================================================
+   Deferred Items List (Phase 3)
+   ============================================================================= */
+
+.deferred-list {
+  padding: 1rem;
+}
+
+.deferred-list.loading {
+  text-align: center;
+  color: #666;
+}
+
+.deferred-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.deferred-header h3 {
+  color: #667eea;
+  margin: 0;
+}
+
+.deferred-summary {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.summary-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #667eea;
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.scope-rationale {
+  padding: 0.75rem;
+  background: #fff3e0;
+  border-left: 3px solid #ff9800;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+}
+
+.deferred-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.search-box {
+  position: relative;
+  flex: 1;
+  max-width: 300px;
+}
+
+.search-box input {
+  width: 100%;
+  padding: 0.5rem 2rem 0.5rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.95rem;
+}
+
+.search-box input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.btn-clear-search {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.expand-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.search-results-count {
+  margin-bottom: 1rem;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.deferred-by-function {
+  margin-bottom: 1.5rem;
+}
+
+.function-group {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+}
+
+.function-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #f5f5f5;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.function-header:hover {
+  background: #e8e8e8;
+}
+
+.expand-icon {
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.function-header .function-name {
+  flex: 1;
+}
+
+.function-header .function-count {
+  color: #666;
+  font-size: 0.9rem;
+  font-weight: normal;
+}
+
+.function-items {
+  padding: 0.5rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.items-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.items-table th,
+.items-table td {
+  padding: 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.items-table th {
+  background: #fafafa;
+  font-weight: 600;
+  color: #666;
+}
+
+.col-qid {
+  width: 100px;
+  font-family: monospace;
+}
+
+.col-question {
+  max-width: 300px;
+}
+
+.col-confidence {
+  width: 80px;
+}
+
+.col-reason {
+  width: 200px;
+  color: #666;
+  font-style: italic;
+}
+
+.confidence-badge {
+  display: inline-block;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+.confidence-badge.high {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.confidence-badge.medium {
+  background: #fff3e0;
+  color: #ef6c00;
+}
+
+.confidence-badge.low {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.no-deferred {
+  text-align: center;
+  padding: 2rem;
+  color: #666;
+}
+
+.deferred-footer {
+  padding: 1rem;
+  background: #f8f9ff;
+  border-radius: 4px;
+}
+
+.accountability-note {
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+}
+
+.deferred-functions {
+  font-size: 0.9rem;
+}
+
+.function-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.function-tag {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.function-tag.deferred {
+  background: #f5f5f5;
+  color: #666;
+}

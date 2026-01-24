@@ -44,6 +44,7 @@ class Audit(Base):
     questions = relationship("Question", back_populates="audit", cascade="all, delete-orphan")
     findings = relationship("Finding", back_populates="audit", cascade="all, delete-orphan")
     tables = relationship("ExtractedTable", back_populates="audit", cascade="all, delete-orphan")
+    scope = relationship("AuditScope", back_populates="audit", uselist=False, cascade="all, delete-orphan")
 
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
@@ -332,4 +333,49 @@ class OwnershipRule(Base):
             "is_active": self.is_active,
             "created_date": self.created_date.isoformat() if self.created_date else None,
             "notes": self.notes
+        }
+
+
+class AuditScope(Base):
+    """
+    Represents the scoping configuration for an audit.
+
+    Defines which of the 7 functions are "in-scope" for the current
+    audit cycle. Questions belonging to out-of-scope functions are
+    tracked as "deferred" items.
+
+    Key Design: Scope is a FILTER/VIEW, not a modification of the
+    ownership table. All QIDs remain assigned to their functions
+    regardless of audit scope.
+    """
+    __tablename__ = 'audit_scopes'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    audit_id = Column(String(36), ForeignKey('audits.id'), nullable=False, unique=True)
+
+    # Functions included in scope (stored as JSON list)
+    # Example: ["Maintenance Planning", "Aircraft Records", "Quality"]
+    in_scope_functions = Column(JSON, nullable=False, default=list)
+
+    # Scope metadata
+    scope_name = Column(String(255), nullable=True)
+    scope_rationale = Column(Text, nullable=True)
+    created_date = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(String(100), nullable=True)
+    last_modified_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationship
+    audit = relationship("Audit", back_populates="scope")
+
+    def to_dict(self):
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "audit_id": self.audit_id,
+            "in_scope_functions": self.in_scope_functions or [],
+            "scope_name": self.scope_name,
+            "scope_rationale": self.scope_rationale,
+            "created_date": self.created_date.isoformat() if self.created_date else None,
+            "created_by": self.created_by,
+            "last_modified_date": self.last_modified_date.isoformat() if self.last_modified_date else None
         }
