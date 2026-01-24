@@ -15,6 +15,7 @@ env/
 
 # Uploads
 backend/uploads/
+backend/manuals/
 
 # Node
 node_modules/

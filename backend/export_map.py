@@ -61,6 +61,47 @@ def export_questions_to_csv(questions: List[Dict[str, Any]]) -> str:
     return output.getvalue()
 
 
+def export_map_to_csv(map_rows: List[Dict[str, Any]]) -> str:
+    """
+    Export MAP rows to CSV format.
+
+    Args:
+        map_rows: List of MAP row dictionaries
+
+    Returns:
+        CSV string
+    """
+    output = io.StringIO()
+
+    fieldnames = [
+        'QID',
+        'Question_Text',
+        'AIP_Reference',
+        'GMM_Reference',
+        'Other_Manual_References',
+        'Evidence_Required',
+        'Audit_Finding',
+        'Compliance_Status'
+    ]
+
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+    writer.writeheader()
+
+    for row in map_rows:
+        writer.writerow({
+            'QID': row.get('QID', ''),
+            'Question_Text': row.get('Question_Text', ''),
+            'AIP_Reference': row.get('AIP_Reference', ''),
+            'GMM_Reference': row.get('GMM_Reference', ''),
+            'Other_Manual_References': row.get('Other_Manual_References', ''),
+            'Evidence_Required': row.get('Evidence_Required', ''),
+            'Audit_Finding': row.get('Audit_Finding', ''),
+            'Compliance_Status': row.get('Compliance_Status', '')
+        })
+
+    return output.getvalue()
+
+
 def export_audit_to_csv(audit: Dict[str, Any]) -> str:
     """
     Export a single audit's questions to CSV format.
@@ -215,6 +256,67 @@ def export_questions_to_xlsx(questions: List[Dict[str, Any]]) -> bytes:
         ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
 
     # Save to bytes
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output.getvalue()
+
+
+def export_map_to_xlsx(map_rows: List[Dict[str, Any]]) -> bytes:
+    """
+    Export MAP rows to Excel format.
+
+    Args:
+        map_rows: List of MAP row dictionaries
+
+    Returns:
+        Excel file bytes
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, Alignment, PatternFill
+    except ImportError:
+        raise ImportError("openpyxl is required for Excel export. Install with: pip install openpyxl")
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "MAP"
+
+    headers = [
+        'QID',
+        'Question_Text',
+        'AIP_Reference',
+        'GMM_Reference',
+        'Other_Manual_References',
+        'Evidence_Required',
+        'Audit_Finding',
+        'Compliance_Status'
+    ]
+
+    header_font = Font(bold=True)
+    header_fill = PatternFill(start_color="CCCCCC", end_color="CCCCCC", fill_type="solid")
+    header_align = Alignment(wrap_text=True, vertical="top")
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+
+    for row_idx, row in enumerate(map_rows, 2):
+        ws.cell(row=row_idx, column=1, value=row.get('QID', ''))
+        ws.cell(row=row_idx, column=2, value=row.get('Question_Text', ''))
+        ws.cell(row=row_idx, column=3, value=row.get('AIP_Reference', ''))
+        ws.cell(row=row_idx, column=4, value=row.get('GMM_Reference', ''))
+        ws.cell(row=row_idx, column=5, value=row.get('Other_Manual_References', ''))
+        ws.cell(row=row_idx, column=6, value=row.get('Evidence_Required', ''))
+        ws.cell(row=row_idx, column=7, value=row.get('Audit_Finding', ''))
+        ws.cell(row=row_idx, column=8, value=row.get('Compliance_Status', ''))
+
+    column_widths = [12, 80, 25, 25, 30, 50, 30, 20]
+    for col, width in enumerate(column_widths, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
+
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)

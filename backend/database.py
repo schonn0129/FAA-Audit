@@ -7,7 +7,18 @@ from sqlalchemy.orm import sessionmaker, scoped_session
 from contextlib import contextmanager
 
 from config import DATABASE_URL
-from models import Base, Audit, Question, Finding, ExtractedTable, OwnershipAssignment, OwnershipRule, AuditScope
+from models import (
+    Base,
+    Audit,
+    Question,
+    Finding,
+    ExtractedTable,
+    OwnershipAssignment,
+    OwnershipRule,
+    AuditScope,
+    Manual,
+    ManualSection
+)
 
 # Create engine
 engine = create_engine(DATABASE_URL, echo=False)
@@ -246,6 +257,103 @@ def search_audits(filename: str = None, start_date: str = None, end_date: str = 
 
         audits = query.order_by(Audit.upload_date.desc()).all()
         return [a.to_dict() for a in audits]
+
+
+# =============================================================================
+# MANUAL FUNCTIONS
+# =============================================================================
+
+def save_manual_with_sections(manual_id: str, filename: str, manual_type: str,
+                              page_count: int, sections: list, version: str = None) -> dict:
+    """
+    Save an uploaded manual and its extracted sections.
+
+    Args:
+        manual_id: UUID for the manual
+        filename: Original filename
+        manual_type: Manual type (AIP, GMM, or custom)
+        page_count: Number of pages
+        sections: List of section dictionaries
+        version: Optional manual version
+
+    Returns:
+        Manual dictionary
+    """
+    with get_session() as session:
+        manual = Manual(
+            id=manual_id,
+            filename=filename,
+            manual_type=manual_type,
+            page_count=page_count,
+            version=version,
+            status="processed"
+        )
+        session.add(manual)
+
+        for section in sections:
+            manual_section = ManualSection(
+                manual_id=manual_id,
+                section_number=section.get("section_number"),
+                section_title=section.get("section_title"),
+                section_text=section.get("section_text"),
+                page_number=section.get("page_number"),
+                cfr_citations=section.get("cfr_citations", []),
+                suggested_owner=section.get("suggested_owner")
+            )
+            session.add(manual_section)
+
+        session.commit()
+        session.refresh(manual)
+        return manual.to_dict()
+
+
+def get_manuals(manual_type: str = None) -> list:
+    """
+    Get list of uploaded manuals.
+    """
+    with get_session() as session:
+        query = session.query(Manual)
+        if manual_type:
+            query = query.filter(Manual.manual_type == manual_type)
+        manuals = query.order_by(Manual.upload_date.desc()).all()
+        return [m.to_dict() for m in manuals]
+
+
+def get_manual(manual_id: str) -> dict:
+    """
+    Get a manual by ID.
+    """
+    with get_session() as session:
+        manual = session.query(Manual).filter(Manual.id == manual_id).first()
+        return manual.to_dict() if manual else None
+
+
+def get_latest_manual_by_type(manual_type: str) -> dict:
+    """
+    Get the most recent manual for a given type.
+    """
+    with get_session() as session:
+        manual = (
+            session.query(Manual)
+            .filter(Manual.manual_type == manual_type)
+            .order_by(Manual.upload_date.desc())
+            .first()
+        )
+        return manual.to_dict() if manual else None
+
+
+def get_manual_sections(manual_id: str) -> list:
+    """
+    Get all sections for a manual.
+    """
+    with get_session() as session:
+        sections = (
+            session.query(ManualSection)
+            .filter(ManualSection.manual_id == manual_id)
+            .order_by(ManualSection.page_number.asc())
+            .all()
+        )
+        return [s.to_dict() for s in sections]
 
 
 # =============================================================================

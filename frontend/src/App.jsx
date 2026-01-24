@@ -3,6 +3,8 @@ import { api } from './services/api';
 import ScopeSelector from './components/ScopeSelector';
 import CoverageDashboard from './components/CoverageDashboard';
 import DeferredItemsList from './components/DeferredItemsList';
+import MapTable from './components/MapTable';
+import ManualManager from './components/ManualManager';
 import './App.css';
 
 function App() {
@@ -12,7 +14,7 @@ function App() {
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
   // Phase 3: Active view tab
-  const [activeView, setActiveView] = useState('questions'); // 'questions' | 'ownership' | 'scope' | 'coverage' | 'deferred'
+  const [activeView, setActiveView] = useState('questions'); // 'questions' | 'ownership' | 'scope' | 'coverage' | 'deferred' | 'map' | 'manuals'
   // Phase 2: Ownership state
   const [ownershipData, setOwnershipData] = useState(null);
   const [assigningOwnership, setAssigningOwnership] = useState(false);
@@ -267,6 +269,18 @@ function App() {
                   >
                     Deferred
                   </button>
+                  <button
+                    className={`tab ${activeView === 'map' ? 'active' : ''}`}
+                    onClick={() => setActiveView('map')}
+                  >
+                    MAP
+                  </button>
+                  <button
+                    className={`tab ${activeView === 'manuals' ? 'active' : ''}`}
+                    onClick={() => setActiveView('manuals')}
+                  >
+                    Manuals
+                  </button>
                 </div>
 
                 <div className="audit-details-content">
@@ -449,6 +463,16 @@ function App() {
                       auditId={selectedAudit.id}
                       onClose={() => setActiveView('coverage')}
                     />
+                  )}
+
+                  {/* MAP View */}
+                  {activeView === 'map' && (
+                    <MapTable auditId={selectedAudit.id} />
+                  )}
+
+                  {/* Manuals View */}
+                  {activeView === 'manuals' && (
+                    <ManualManager />
                   )}
                 </div>
               </>

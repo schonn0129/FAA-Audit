@@ -205,4 +205,65 @@ export const api = {
     }
     return response.json();
   },
+
+  // =============================================================================
+  // MAP ENDPOINTS (Phase 4)
+  // =============================================================================
+
+  /**
+   * Get MAP rows for an audit
+   */
+  async getAuditMap(auditId) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/map`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Fetch failed' }));
+      throw new Error(error.error || 'Failed to fetch MAP');
+    }
+    return response.json();
+  },
+
+  /**
+   * Build a download URL for MAP export
+   */
+  getAuditMapExportUrl(auditId, format = 'xlsx') {
+    return `${API_BASE_URL}/audits/${auditId}/map/export?format=${format}`;
+  },
+
+  // =============================================================================
+  // MANUAL ENDPOINTS
+  // =============================================================================
+
+  /**
+   * Upload a company manual (AIP/GMM)
+   */
+  async uploadManual(file, manualType) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('manual_type', manualType || 'Other');
+
+    const response = await fetch(`${API_BASE_URL}/manuals/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(error.error || 'Manual upload failed');
+    }
+    return response.json();
+  },
+
+  /**
+   * List uploaded manuals
+   */
+  async getManuals(manualType = null) {
+    const url = manualType
+      ? `${API_BASE_URL}/manuals?type=${encodeURIComponent(manualType)}`
+      : `${API_BASE_URL}/manuals`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Fetch failed' }));
+      throw new Error(error.error || 'Failed to fetch manuals');
+    }
+    return response.json();
+  },
 };

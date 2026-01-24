@@ -23,11 +23,13 @@ CORS(app)  # Enable CORS for frontend
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
+MANUAL_UPLOAD_FOLDER = 'manuals'
 ALLOWED_EXTENSIONS = {'pdf'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 # Ensure upload directory exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(MANUAL_UPLOAD_FOLDER, exist_ok=True)
 
 
 def allowed_file(filename):
@@ -316,6 +318,78 @@ def export_single_audit(audit_id):
 
     else:
         return jsonify({"error": f"Export format '{format_type}' not supported. Use 'json', 'csv', or 'xlsx'."}), 400
+
+
+# =============================================================================
+# COMPANY MANUAL ENDPOINTS
+# =============================================================================
+
+@app.route('/api/manuals', methods=['GET'])
+def list_manuals():
+    """List uploaded company manuals."""
+    manual_type = request.args.get('type')
+    manuals = db.get_manuals(manual_type=manual_type)
+    return jsonify({"manuals": manuals}), 200
+
+
+@app.route('/api/manuals/upload', methods=['POST'])
+def upload_manual():
+    """Upload and parse a company manual (AIP/GMM or other)."""
+    import manual_parser
+
+    if 'file' not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files['file']
+    if file.filename == '' or not file.filename:
+        return jsonify({"error": "No file selected"}), 400
+
+    manual_type = request.form.get('manual_type', 'Other').strip()
+    if not manual_type:
+        manual_type = 'Other'
+
+    if not allowed_file(file.filename):
+        return jsonify({
+            "error": "Invalid file type. Only PDF files are allowed.",
+            "received": file.filename
+        }), 400
+
+    # Check file size
+    file.seek(0, os.SEEK_END)
+    file_size = file.tell()
+    file.seek(0)
+    if file_size > MAX_FILE_SIZE:
+        return jsonify({
+            "error": f"File size exceeds maximum allowed size of {MAX_FILE_SIZE / (1024*1024)}MB"
+        }), 400
+
+    manual_id = str(uuid.uuid4())
+    filename = secure_filename(file.filename)
+    if not filename:
+        return jsonify({"error": "Invalid filename"}), 400
+
+    filepath = os.path.join(MANUAL_UPLOAD_FOLDER, f"{manual_id}_{filename}")
+    os.makedirs(MANUAL_UPLOAD_FOLDER, exist_ok=True)
+    file.save(filepath)
+
+    try:
+        parsed = manual_parser.parse_manual_pdf(filepath)
+        manual = db.save_manual_with_sections(
+            manual_id=manual_id,
+            filename=filename,
+            manual_type=manual_type,
+            page_count=parsed.get("page_count", 0),
+            sections=parsed.get("sections", []),
+            version=parsed.get("version")
+        )
+        manual["section_count"] = len(parsed.get("sections", []))
+        return jsonify(manual), 200
+    except Exception as e:
+        logger.error(f"Error processing manual: {e}", exc_info=True)
+        return jsonify({
+            "error": "Failed to process manual",
+            "message": str(e)
+        }), 500
 
 
 # =============================================================================
@@ -754,6 +828,75 @@ def get_deferred_items(audit_id):
     report["audit_id"] = audit_id
 
     return jsonify(report), 200
+
+
+# =============================================================================
+# MAP CONSTRUCTION ENDPOINTS (Phase 4)
+# =============================================================================
+
+@app.route('/api/audits/<audit_id>/map', methods=['GET'])
+def get_audit_map(audit_id):
+    """
+    Generate the Mapping Audit Package (MAP) for in-scope questions.
+    """
+    import map_builder
+
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Record not found"}), 404
+
+    assignments = db.get_ownership_assignments(audit_id)
+    if not assignments:
+        return jsonify({"error": "No ownership assignments found. Run POST /api/audits/{id}/ownership first."}), 400
+
+    payload = map_builder.generate_map_payload(audit_id)
+    return jsonify(payload), 200
+
+
+@app.route('/api/audits/<audit_id>/map/export', methods=['GET'])
+def export_audit_map(audit_id):
+    """Export the MAP as CSV or Excel."""
+    from flask import Response
+    import map_builder
+    import export_map
+
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Record not found"}), 404
+
+    assignments = db.get_ownership_assignments(audit_id)
+    if not assignments:
+        return jsonify({"error": "No ownership assignments found. Run POST /api/audits/{id}/ownership first."}), 400
+
+    format_type = request.args.get('format', 'xlsx')
+    map_rows, _, _ = map_builder.build_map_rows(audit_id)
+    if not map_rows:
+        return jsonify({"error": "No MAP rows available for current scope."}), 400
+
+    base_name = record["filename"].rsplit(".", 1)[0]
+
+    if format_type == 'csv':
+        csv_data = export_map.export_map_to_csv(map_rows)
+        filename = f"{base_name}_map.csv"
+        return Response(
+            csv_data,
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename={filename}'}
+        )
+
+    if format_type == 'xlsx':
+        try:
+            xlsx_data = export_map.export_map_to_xlsx(map_rows)
+            filename = f"{base_name}_map.xlsx"
+            return Response(
+                xlsx_data,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                headers={'Content-Disposition': f'attachment; filename={filename}'}
+            )
+        except ImportError as e:
+            return jsonify({"error": str(e)}), 400
+
+    return jsonify({"error": f"Export format '{format_type}' not supported. Use 'csv' or 'xlsx'."}), 400
 
 
 if __name__ == '__main__':
