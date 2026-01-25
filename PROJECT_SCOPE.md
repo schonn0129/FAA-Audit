@@ -24,11 +24,11 @@ This is a **deterministic compliance engine**, not a generative AI task. Every d
 
 ---
 
-### Phase 2: Ownership Assignment Logic 🔨 IN PROGRESS
+### Phase 2: Ownership Assignment Logic ✅ COMPLETE
 
 **Objective:** Apply rules-based decision tree to assign each QID to a responsible function.
 
-**Implementation Status:** Not started
+**Implementation Status:** Complete
 
 **The 7 Authorized Functions:**
 1. Maintenance Planning (MP)
@@ -65,19 +65,19 @@ This is a **deterministic compliance engine**, not a generative AI task. Every d
 - Confidence score (High/Medium/Low based on clarity of signals)
 
 **Deliverables:**
-- [ ] Build keyword analysis engine
-- [ ] Map CFR references to functions
-- [ ] Create AIP/GMM cross-reference lookup
-- [ ] Implement confidence scoring algorithm
-- [ ] Generate ownership assignment table for all QIDs
+- [x] Build keyword analysis engine
+- [x] Map CFR references to functions
+- [x] Create manual cross-reference lookup (company manuals)
+- [x] Implement confidence scoring algorithm
+- [x] Generate ownership assignment table for all QIDs
 
 ---
 
-### Phase 3: Audit Scoping with Full Accountability 🔨 NOT STARTED
+### Phase 3: Audit Scoping with Full Accountability ✅ COMPLETE
 
 **Objective:** Allow user to define audit focus while maintaining full QID accountability.
 
-**Implementation Status:** Not started
+**Implementation Status:** Complete
 
 **Functionality:**
 - User defines focus (e.g., "MP and Aircraft Records only")
@@ -89,36 +89,38 @@ This is a **deterministic compliance engine**, not a generative AI task. Every d
 > "This ensures PMI can see you accounted for everything, even if you didn't audit everything."
 
 **Deliverables:**
-- [ ] Build scope selection UI
-- [ ] Implement in-scope vs. deferred tracking
-- [ ] Create coverage metrics calculation
-- [ ] Generate deferred items report
+- [x] Build scope selection UI
+- [x] Implement in-scope vs. deferred tracking
+- [x] Create coverage metrics calculation
+- [x] Generate deferred items report
 
 ---
 
-### Phase 4: MAP Construction 🔨 NOT STARTED
+### Phase 4: MAP Construction ✅ COMPLETE
 
 **Objective:** Build the Mapping Audit Package for in-scope functions.
 
-**Implementation Status:** Not started
+**Implementation Status:** Complete
 
 **MAP Table Structure:**
 
-| QID | Question Text | AIP Reference | GMM Reference | Evidence Required | Audit Finding | Compliance Status |
-|-----|---------------|---------------|---------------|-------------------|---------------|-------------------|
-| ... | ...           | ...           | ...           | ...               | *(empty)*     | *(empty)*         |
+| QID | Question Text | AIP Reference | GMM Reference | Other Manual References | Evidence Required | Applicability Status | Applicability Reason | Audit Finding | Compliance Status |
+|-----|---------------|---------------|---------------|-------------------------|-------------------|----------------------|----------------------|---------------|-------------------|
+| ... | ...           | ...           | ...           | ...                     | ...               | Applicable/Not Applicable | *(optional)* | *(empty)*     | *(empty)*         |
 
 **Features:**
-- Pre-populate references from ownership rationale
+- Pre-populate references from latest uploaded company manuals (AIP/GMM/Other)
 - Leave Finding/Status columns empty for auditor completion
-- Include "Evidence Guidance" column with suggested artifacts
+- Include evidence guidance from DCT "Data Collection Guidance"
+- Track applicability (auditor can mark Not Applicable; tool can auto-detect)
 
 **Deliverables:**
-- [ ] Design MAP data structure
-- [ ] Build MAP generator from in-scope QIDs
-- [ ] Pre-populate AIP/GMM references
-- [ ] Add evidence guidance suggestions
-- [ ] Export MAP to Excel format
+- [x] Design MAP data structure
+- [x] Build MAP generator from in-scope QIDs
+- [x] Pre-populate manual references (AIP/GMM/Other)
+- [x] Add evidence guidance suggestions
+- [x] Export MAP to Excel/CSV format
+- [x] Include applicability status/reason columns
 
 ---
 
@@ -203,6 +205,7 @@ This is a **deterministic compliance engine**, not a generative AI task. Every d
 ### Repeatability
 - Same DCT + same manuals = same ownership table (deterministic)
 - Version control on DCT/AIP/GMM used (include in PDF header)
+- Startup script auto-selects free ports for repeatable local testing
 
 ---
 

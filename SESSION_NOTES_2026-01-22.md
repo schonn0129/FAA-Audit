@@ -3,6 +3,32 @@
 
 ---
 
+## Current Progress Update (Post-Session)
+
+### Phase Status Updates
+- Phase 2 (Ownership Assignment): Complete
+- Phase 3 (Audit Scoping): Complete
+- Phase 4 (MAP Construction): Complete
+
+### New Capabilities Added
+- Company manual upload + parsing (AIP/GMM/Other) with section extraction and CFR citation capture
+- Manual matching engine to suggest MAP references from latest manuals
+- MAP generator and export (CSV/XLSX) with manual references and evidence guidance
+- Applicability flags per QID (default Applicable, auditor can set Not Applicable)
+- Auto-detect applicability from explicit "not applicable" language (manual overrides are final)
+- MAP includes applicability status/reason while keeping all QIDs visible
+- Repeatable startup script with automatic port fallback and env wiring
+
+### Notes
+- MAP uses the latest uploaded manual per type across all audits (agnostic/manuals are global).
+- Not Applicable QIDs remain visible in MAP but can be excluded from mapping decisions by auditors.
+
+### Next Fixes/Modifications
+- Address any remaining UI/UX refinements flagged in testing
+- Add security/authorization when ready
+
+---
+
 ## Session Overview
 
 This session focused on initiating **Phase 2: Ownership Assignment Logic** for the FAA DCT Compliance Engine. We established the complete project scope, created a detailed implementation plan, and completed the first milestone (database models and migration).
