@@ -1,32 +1,130 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { OwnershipPieChart, ScopeBarChart, RiskHeatmap } from './charts';
 
 /**
  * CoverageDashboard Component
  *
  * Displays coverage metrics for an audit based on its scope configuration.
- * Shows in-scope vs. deferred breakdown by function.
+ * Includes visualizations: pie chart, bar chart, and risk heatmap.
  */
 export default function CoverageDashboard({ auditId, onViewDeferred }) {
   const [metrics, setMetrics] = useState(null);
+  const [ownership, setOwnership] = useState(null);
+  const [mapData, setMapData] = useState(null);
+  const [riskData, setRiskData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    loadMetrics();
+    loadAllData();
   }, [auditId]);
 
-  const loadMetrics = async () => {
+  const loadAllData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getCoverageMetrics(auditId);
-      setMetrics(data);
+      // Fetch all data in parallel
+      const [metricsRes, ownershipRes, mapRes] = await Promise.all([
+        api.getCoverageMetrics(auditId),
+        api.getOwnershipAssignments(auditId).catch(() => ({ assignments: [] })),
+        api.getAuditMap(auditId).catch(() => ({ map_rows: [] }))
+      ]);
+
+      setMetrics(metricsRes);
+      setOwnership(ownershipRes);
+      setMapData(mapRes);
+
+      // Compute risk data from ownership and MAP
+      const computed = computeRiskData(ownershipRes.assignments || [], mapRes.map_rows || []);
+      setRiskData(computed);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  /**
+   * Compute risk matrix data by combining ownership confidence and manual references.
+   */
+  const computeRiskData = (assignments, mapRows) => {
+    // Create lookup for manual references by QID
+    const manualRefsByQid = {};
+    mapRows.forEach(row => {
+      const hasRefs = !!(row.AIP_Reference || row.GMM_Reference || row.Other_Manual_References);
+      manualRefsByQid[row.QID] = hasRefs;
+    });
+
+    // Initialize counters
+    let highConfWithRefs = 0;
+    let highConfNoRefs = 0;
+    let medConfWithRefs = 0;
+    let medConfNoRefs = 0;
+    let lowConfWithRefs = 0;
+    let lowConfNoRefs = 0;
+    const needsReview = [];
+
+    assignments.forEach(assignment => {
+      const confidence = assignment.confidence_score || 'Low';
+      const hasRefs = manualRefsByQid[assignment.qid] ?? false;
+
+      if (confidence === 'High') {
+        if (hasRefs) highConfWithRefs++;
+        else {
+          highConfNoRefs++;
+          needsReview.push({
+            qid: assignment.qid,
+            confidence,
+            issue: 'Missing manual references'
+          });
+        }
+      } else if (confidence === 'Medium') {
+        if (hasRefs) medConfWithRefs++;
+        else {
+          medConfNoRefs++;
+          needsReview.push({
+            qid: assignment.qid,
+            confidence,
+            issue: 'Missing manual references'
+          });
+        }
+      } else {
+        if (hasRefs) {
+          lowConfWithRefs++;
+          needsReview.push({
+            qid: assignment.qid,
+            confidence,
+            issue: 'Low confidence assignment'
+          });
+        } else {
+          lowConfNoRefs++;
+          needsReview.push({
+            qid: assignment.qid,
+            confidence,
+            issue: 'Low confidence + missing refs'
+          });
+        }
+      }
+    });
+
+    // Total at risk = medium-no-refs + low (both)
+    const totalAtRisk = medConfNoRefs + lowConfWithRefs + lowConfNoRefs;
+
+    return {
+      highConfWithRefs,
+      highConfNoRefs,
+      medConfWithRefs,
+      medConfNoRefs,
+      lowConfWithRefs,
+      lowConfNoRefs,
+      totalAtRisk,
+      needsReview: needsReview.sort((a, b) => {
+        // Sort by risk level: Low conf no refs first
+        const riskOrder = { 'Low confidence + missing refs': 0, 'Low confidence assignment': 1, 'Missing manual references': 2 };
+        return (riskOrder[a.issue] || 3) - (riskOrder[b.issue] || 3);
+      })
+    };
   };
 
   if (loading) {
@@ -37,7 +135,7 @@ export default function CoverageDashboard({ auditId, onViewDeferred }) {
     return (
       <div className="coverage-dashboard error">
         <div className="error-message">{error}</div>
-        <button onClick={loadMetrics} className="btn-secondary">Retry</button>
+        <button onClick={loadAllData} className="btn-secondary">Retry</button>
       </div>
     );
   }
@@ -52,51 +150,29 @@ export default function CoverageDashboard({ auditId, onViewDeferred }) {
   return (
     <div className="coverage-dashboard">
       <div className="coverage-header">
-        <h3>Coverage Metrics</h3>
-        <button onClick={loadMetrics} className="btn-secondary btn-small">
+        <h3>Coverage Dashboard</h3>
+        <button onClick={loadAllData} className="btn-secondary btn-small">
           Refresh
         </button>
       </div>
 
-      {/* Overall Coverage */}
-      <div className="coverage-overview">
-        <div className="coverage-percentage">
-          <div className="percentage-circle" data-percentage={overall_percentage}>
-            <span className="percentage-value">{overall_percentage}%</span>
-            <span className="percentage-label">Coverage</span>
-          </div>
+      {/* Executive Summary */}
+      <div className="executive-summary">
+        <div className="summary-card primary">
+          <div className="card-value">{overall_percentage}%</div>
+          <div className="card-label">Coverage</div>
         </div>
-        <div className="coverage-counts">
-          <div className="count-item in-scope">
-            <span className="count-value">{in_scope_count}</span>
-            <span className="count-label">In Scope</span>
-          </div>
-          <div className="count-item deferred">
-            <span className="count-value">{deferred_count}</span>
-            <span className="count-label">Deferred</span>
-          </div>
-          <div className="count-item total">
-            <span className="count-value">{metrics.total_qids}</span>
-            <span className="count-label">Total QIDs</span>
-          </div>
+        <div className="summary-card">
+          <div className="card-value">{in_scope_count}</div>
+          <div className="card-label">In Scope</div>
         </div>
-      </div>
-
-      {/* Coverage Bar */}
-      <div className="coverage-bar-container">
-        <div className="coverage-bar">
-          <div
-            className="coverage-bar-fill in-scope"
-            style={{ width: `${overall_percentage}%` }}
-          />
-          <div
-            className="coverage-bar-fill deferred"
-            style={{ width: `${100 - overall_percentage}%` }}
-          />
+        <div className="summary-card">
+          <div className="card-value">{deferred_count}</div>
+          <div className="card-label">Deferred</div>
         </div>
-        <div className="coverage-bar-legend">
-          <span className="legend-item in-scope">In Scope ({overall_percentage}%)</span>
-          <span className="legend-item deferred">Deferred ({(100 - overall_percentage).toFixed(1)}%)</span>
+        <div className="summary-card">
+          <div className="card-value">{metrics.total_qids}</div>
+          <div className="card-label">Total QIDs</div>
         </div>
       </div>
 
@@ -108,31 +184,31 @@ export default function CoverageDashboard({ auditId, onViewDeferred }) {
         <span className="check-message">{accountability_check.message}</span>
       </div>
 
-      {/* Function Breakdown */}
-      <div className="function-breakdown">
-        <h4>Breakdown by Function</h4>
-        <div className="function-table">
-          <div className="table-header">
-            <span className="col-function">Function</span>
-            <span className="col-status">Status</span>
-            <span className="col-count">QIDs</span>
-            <span className="col-percent">% of Audit</span>
-          </div>
-          {Object.entries(by_function)
-            .sort((a, b) => b[1].total - a[1].total)
-            .map(([func, data]) => (
-              <div key={func} className={`table-row ${data.in_scope ? 'in-scope' : 'deferred'}`}>
-                <span className="col-function">{func}</span>
-                <span className="col-status">
-                  <span className={`status-badge ${data.in_scope ? 'in-scope' : 'deferred'}`}>
-                    {data.in_scope ? 'In Scope' : 'Deferred'}
-                  </span>
-                </span>
-                <span className="col-count">{data.total}</span>
-                <span className="col-percent">{data.percentage_of_audit}%</span>
-              </div>
-            ))}
+      {/* Charts Grid */}
+      <div className="charts-grid">
+        {/* Pie Chart - QID Distribution */}
+        <div className="chart-wrapper">
+          <OwnershipPieChart byFunction={by_function} />
         </div>
+
+        {/* Bar Chart - In-Scope vs Deferred */}
+        <div className="chart-wrapper">
+          <ScopeBarChart
+            byFunction={by_function}
+            inScopeFunctions={in_scope_functions}
+          />
+        </div>
+      </div>
+
+      {/* Risk Heatmap - Full Width */}
+      <div className="chart-wrapper full-width">
+        <RiskHeatmap
+          riskData={riskData}
+          onCellClick={(cell) => {
+            console.log('Risk cell clicked:', cell);
+            // Future: filter/show specific QIDs
+          }}
+        />
       </div>
 
       {/* In-Scope Functions Summary */}

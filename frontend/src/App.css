@@ -1444,3 +1444,319 @@ body {
 .btn-link:hover {
   text-decoration: underline;
 }
+
+/* =============================================================================
+   Dashboard Charts (Phase 5)
+   ============================================================================= */
+
+/* Executive Summary Cards */
+.executive-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.summary-card {
+  background: #f8f9ff;
+  padding: 1.25rem;
+  border-radius: 8px;
+  text-align: center;
+  border: 1px solid #e3e8fc;
+}
+
+.summary-card.primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+}
+
+.summary-card .card-value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.summary-card .card-label {
+  font-size: 0.85rem;
+  opacity: 0.9;
+  margin-top: 0.25rem;
+}
+
+/* Charts Grid */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.chart-wrapper {
+  background: white;
+  border: 1px solid #e1e4ea;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.chart-wrapper.full-width {
+  grid-column: 1 / -1;
+}
+
+.chart-container {
+  width: 100%;
+}
+
+.chart-title {
+  margin: 0 0 0.5rem;
+  color: #333;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.chart-subtitle {
+  margin: 0 0 1rem;
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.chart-empty {
+  text-align: center;
+  padding: 2rem;
+  color: #999;
+}
+
+/* Chart Tooltips */
+.chart-tooltip {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 0.75rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.chart-tooltip .tooltip-label {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.chart-tooltip .tooltip-value {
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.chart-tooltip .tooltip-value.in-scope {
+  color: #4CAF50;
+}
+
+.chart-tooltip .tooltip-value.deferred {
+  color: #9E9E9E;
+}
+
+.chart-tooltip .tooltip-total {
+  font-size: 0.85rem;
+  color: #666;
+  margin-top: 0.25rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid #eee;
+}
+
+/* Risk Heatmap */
+.risk-heatmap {
+  padding: 1rem;
+}
+
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: 140px 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 1rem;
+}
+
+.heatmap-cell {
+  padding: 0.75rem;
+  text-align: center;
+  border-radius: 4px;
+}
+
+.heatmap-cell.header {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #666;
+  background: #f5f5f5;
+}
+
+.heatmap-cell.corner {
+  background: transparent;
+}
+
+.heatmap-cell.row-header {
+  text-align: right;
+  font-weight: 500;
+  font-size: 0.9rem;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.heatmap-cell.data {
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.heatmap-cell.data.clickable {
+  cursor: pointer;
+}
+
+.heatmap-cell.data.clickable:hover {
+  transform: scale(1.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.cell-count {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Heatmap Legend */
+.heatmap-legend {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.legend-color {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+}
+
+/* Risk Summary */
+.risk-summary {
+  background: #fff8e1;
+  border: 1px solid #ffcc80;
+  border-radius: 6px;
+  padding: 1rem;
+  text-align: center;
+}
+
+.risk-summary .summary-stat.warning .stat-value {
+  color: #e65100;
+  font-size: 2rem;
+}
+
+.risk-summary .summary-note {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+/* Needs Review Section */
+.needs-review-section {
+  margin-top: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+}
+
+.review-toggle {
+  padding: 0.75rem 1rem;
+  background: #f8f8f8;
+  cursor: pointer;
+  font-weight: 500;
+  color: #667eea;
+}
+
+.review-toggle:hover {
+  background: #f0f0f0;
+}
+
+.review-list {
+  padding: 0.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.review-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #eee;
+}
+
+.review-item:last-child {
+  border-bottom: none;
+}
+
+.review-qid {
+  font-family: monospace;
+  font-weight: 600;
+  min-width: 80px;
+}
+
+.review-confidence {
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.review-confidence.high {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.review-confidence.medium {
+  background: #fff3e0;
+  color: #ef6c00;
+}
+
+.review-confidence.low {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.review-issue {
+  flex: 1;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.review-more {
+  text-align: center;
+  padding: 0.5rem;
+  color: #667eea;
+  font-size: 0.9rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .executive-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .heatmap-grid {
+    grid-template-columns: 100px 1fr 1fr;
+  }
+
+  .heatmap-cell.row-header {
+    font-size: 0.8rem;
+  }
+}

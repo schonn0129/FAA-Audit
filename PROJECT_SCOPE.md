@@ -124,11 +124,11 @@ This is a **deterministic compliance engine**, not a generative AI task. Every d
 
 ---
 
-### Phase 5: Dashboard & Risk Visualization 🔨 NOT STARTED
+### Phase 5: Dashboard & Risk Visualization ✅ COMPLETE
 
 **Objective:** Generate executive summary with visual analytics.
 
-**Implementation Status:** Not started
+**Implementation Status:** Complete
 
 **Required Visualizations:**
 1. **Pie Chart:** QID distribution by owner
@@ -137,11 +137,17 @@ This is a **deterministic compliance engine**, not a generative AI task. Every d
 4. **Coverage Metrics:** % of DCT accounted for, % audited this cycle
 
 **Deliverables:**
-- [ ] Build dashboard UI
-- [ ] Implement pie chart (QID distribution)
-- [ ] Implement bar chart (scope coverage)
-- [ ] Implement risk heatmap
-- [ ] Calculate and display coverage metrics
+- [x] Build dashboard UI
+- [x] Implement pie chart (QID distribution)
+- [x] Implement bar chart (scope coverage)
+- [x] Implement risk heatmap
+- [x] Calculate and display coverage metrics
+
+**Implementation Details:**
+- Charts implemented using recharts library
+- CoverageDashboard component enhanced with executive summary cards
+- Risk heatmap shows confidence vs manual reference matrix
+- Items flagged for review: low confidence, missing manual references
 
 ---
 
@@ -224,20 +230,19 @@ A quality manager can hand this package to a PMI and say:
 ## Current Implementation Status
 
 ### ✅ Completed
-- PDF parser extracts QIDs with full metadata
+- Phase 1: PDF parser extracts QIDs with full metadata
+- Phase 2: Ownership assignment logic with confidence scoring
+- Phase 3: Audit scoping interface with coverage metrics
+- Phase 4: MAP generation with manual cross-references
+- Phase 5: Dashboard visualizations (pie chart, bar chart, risk heatmap)
 - Database layer for audit storage
-- Basic upload API endpoint
-- React frontend for PDF upload
+- React frontend with full navigation
 
 ### 🔨 In Progress
 - None currently
 
 ### ❌ Not Started
-- Ownership assignment logic (Phase 2)
-- Audit scoping interface (Phase 3)
-- MAP generation (Phase 4)
-- Dashboard visualizations (Phase 5)
-- PDF export package (Phase 6)
+- Phase 6: PDF export package
 
 ---
 
@@ -280,22 +285,34 @@ A quality manager can hand this package to a PMI and say:
 ```
 FAA-Audit/
 ├── backend/
-│   ├── app.py                 # Flask API (✅ Phase 1 complete)
-│   ├── pdf_parser.py          # DCT PDF parser (✅ Phase 1 complete)
-│   ├── database.py            # Database layer (✅ Phase 1 complete)
-│   ├── ownership.py           # ❌ Phase 2: Ownership assignment logic
-│   ├── map_generator.py       # ❌ Phase 4: MAP construction
+│   ├── app.py                 # Flask API (✅ All endpoints)
+│   ├── pdf_parser.py          # DCT PDF parser (✅ Phase 1)
+│   ├── database.py            # Database layer (✅ Phase 1)
+│   ├── ownership.py           # ✅ Phase 2: Ownership assignment
+│   ├── scoping.py             # ✅ Phase 3: Audit scoping
+│   ├── map_builder.py         # ✅ Phase 4: MAP construction
+│   ├── export_map.py          # ✅ Phase 4: MAP export
+│   ├── manual_parser.py       # ✅ Manual parsing
+│   ├── manual_mapper.py       # ✅ Manual cross-reference
 │   ├── pdf_export.py          # ❌ Phase 6: PDF assembly
 │   └── requirements.txt
 ├── frontend/
 │   └── src/
-│       ├── App.jsx            # Main UI (✅ Basic upload complete)
+│       ├── App.jsx            # Main UI with navigation
+│       ├── App.css            # Styles including chart styles
 │       ├── components/
-│       │   ├── Dashboard.jsx  # ❌ Phase 5: Visualizations
-│       │   ├── OwnershipTable.jsx  # ❌ Phase 2: View assignments
-│       │   └── ScopeSelector.jsx   # ❌ Phase 3: Audit scoping
+│       │   ├── CoverageDashboard.jsx  # ✅ Phase 5: Dashboard
+│       │   ├── ScopeSelector.jsx      # ✅ Phase 3: Scope UI
+│       │   ├── DeferredItemsList.jsx  # ✅ Phase 3: Deferred items
+│       │   ├── MapTable.jsx           # ✅ Phase 4: MAP view
+│       │   ├── ManualManager.jsx      # ✅ Manual upload
+│       │   └── charts/
+│       │       ├── OwnershipPieChart.jsx  # ✅ Phase 5
+│       │       ├── ScopeBarChart.jsx      # ✅ Phase 5
+│       │       ├── RiskHeatmap.jsx        # ✅ Phase 5
+│       │       └── index.js
 │       └── services/
-│           └── api.js         # ✅ Basic API integration
+│           └── api.js         # ✅ Full API integration
 ├── PROJECT_SCOPE.md           # This file
 ├── README.md
 ├── DEVELOPMENT.md
@@ -306,8 +323,8 @@ FAA-Audit/
 
 ## Version Control
 
-- **Document Version:** 1.0
-- **Last Updated:** 2026-01-22
+- **Document Version:** 1.1
+- **Last Updated:** 2026-01-26
 - **DCT Version:** TBD (specify when implementing)
 - **AIP Version:** TBD (specify when implementing)
 - **GMM Version:** TBD (specify when implementing)
