@@ -202,6 +202,15 @@ function App() {
     }
   };
 
+  const dctLabel = (() => {
+    const edition = selectedAudit?.data?.metadata?.dct_edition;
+    const version = selectedAudit?.data?.metadata?.dct_version;
+    if (edition && version) return `ED ${edition} (Version ${version})`;
+    if (edition) return `ED ${edition}`;
+    if (version) return `Version ${version}`;
+    return 'Unknown';
+  })();
+
   return (
     <div className="app">
       <header className="app-header">
@@ -232,6 +241,9 @@ function App() {
               {uploading ? 'Uploading...' : 'Choose PDF File'}
             </label>
             {uploading && <div className="upload-progress">Processing PDF...</div>}
+            <div className="upload-note">
+              QID counts vary by DCT edition/version; completeness is validated against the uploaded file.
+            </div>
           </div>
         </div>
 
@@ -345,6 +357,9 @@ function App() {
                           </div>
                           <div>
                             <strong>Pages:</strong> {selectedAudit.data.metadata?.page_count || 0}
+                          </div>
+                          <div>
+                            <strong>DCT:</strong> {dctLabel}
                           </div>
                           <div>
                             <strong>Uploaded:</strong>{' '}

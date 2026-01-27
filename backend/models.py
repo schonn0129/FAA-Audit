@@ -28,6 +28,8 @@ class Audit(Base):
     facility_number = Column(String(100), nullable=True)
     document_type = Column(String(100), nullable=True)
     element_id = Column(String(50), nullable=True)  # e.g., "4.2.1"
+    dct_edition = Column(String(50), nullable=True)  # e.g., "4.2.1"
+    dct_version = Column(String(50), nullable=True)  # e.g., "29"
 
     # Raw text length for reference
     raw_text_length = Column(Integer, default=0)
@@ -61,7 +63,9 @@ class Audit(Base):
                 "facility_number": self.facility_number,
                 "document_type": self.document_type,
                 "page_count": self.page_count,
-                "element_id": self.element_id
+                "element_id": self.element_id,
+                "dct_edition": self.dct_edition,
+                "dct_version": self.dct_version
             },
             "questions": [q.to_dict() for q in self.questions],
             "findings": [f.to_dict() for f in self.findings],
@@ -304,6 +308,7 @@ class OwnershipAssignment(Base):
     keyword_matches = Column(JSON, default=list)
     cfr_matches = Column(JSON, default=list)
     manual_section_links = Column(JSON, default=list)  # [{"section": "5.2.1", "manual": "AIP"}]
+    manual_section_exclusions = Column(JSON, default=list)  # [{"section": "5.2.1", "manual_type": "AIP"}]
 
     # Manual override support
     is_manual_override = Column(Boolean, default=False)
@@ -331,6 +336,7 @@ class OwnershipAssignment(Base):
             "keyword_matches": self.keyword_matches or [],
             "cfr_matches": self.cfr_matches or [],
             "manual_section_links": self.manual_section_links or [],
+            "manual_section_exclusions": self.manual_section_exclusions or [],
             "is_manual_override": self.is_manual_override,
             "override_reason": self.override_reason,
             "override_by": self.override_by,

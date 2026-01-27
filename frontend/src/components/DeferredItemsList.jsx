@@ -186,7 +186,7 @@ export default function DeferredItemsList({ auditId, onClose }) {
                         <tr key={item.qid || idx}>
                           <td className="col-qid">{item.qid || '-'}</td>
                           <td className="col-question">
-                            {item.question_text_condensed || item.question_text_full?.substring(0, 100) || '-'}
+                            {item.question_text_full || item.question_text_condensed || '-'}
                           </td>
                           <td className="col-confidence">
                             <span className={`confidence-badge ${item.confidence_score?.toLowerCase() || 'unknown'}`}>

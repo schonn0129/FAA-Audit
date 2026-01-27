@@ -109,8 +109,49 @@ def build_map_rows(audit_id: str) -> Tuple[List[Dict[str, Any]], List[str], List
                 applicability_reason = applicability.reason or ""
                 not_applicable_count += 1
             manual_links = assignment.manual_section_links or []
-            if not manual_links and sections_by_type:
-                manual_links = manual_mapper.suggest_manual_links(question, sections_by_type)
+            exclusions = assignment.manual_section_exclusions or []
+            excluded_keys = {
+                (
+                    (e.get("manual_type") or e.get("manual") or "").upper(),
+                    str(e.get("section") or e.get("section_number") or e.get("reference") or "")
+                )
+                for e in exclusions
+            }
+            if any((e.get("manual_type") or "").upper() == "ANY" for e in exclusions):
+                excluded_keys.add(("ANY", "*"))
+
+            if manual_links:
+                manual_links = [
+                    l for l in manual_links
+                    if (
+                        (l.get("manual_type") or l.get("manual") or "").upper(),
+                        str(l.get("section") or l.get("section_number") or l.get("reference") or "")
+                    ) not in excluded_keys
+                ]
+
+            if sections_by_type:
+                suggested_links = manual_mapper.suggest_manual_links(question, sections_by_type)
+                if suggested_links:
+                    # Merge manual overrides with auto-suggestions, avoiding duplicates.
+                    merged = list(manual_links)
+                    existing_keys = {
+                        (
+                            (l.get("manual_type") or l.get("manual") or "").upper(),
+                            str(l.get("section") or l.get("section_number") or l.get("reference") or "")
+                        )
+                        for l in merged
+                    }
+                    for link in suggested_links:
+                        key = (
+                            (link.get("manual_type") or link.get("manual") or "").upper(),
+                            str(link.get("section") or link.get("section_number") or link.get("reference") or "")
+                        )
+                        if key in excluded_keys or ("ANY", "*") in excluded_keys:
+                            continue
+                        if key not in existing_keys:
+                            merged.append(link)
+                            existing_keys.add(key)
+                    manual_links = merged
             rows.append({
                 "QID": question.qid or "",
                 "Question_Text": question.question_text_full or question.question_text_condensed or "",

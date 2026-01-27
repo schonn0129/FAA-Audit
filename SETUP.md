@@ -113,9 +113,10 @@ npm install
 ## Next Steps
 
 1. Upload a DCT PDF file through the web interface
-2. View extracted questions and data
-3. Review the parsed JSON output
-4. Test with different PDF formats
+2. Note: QID counts vary by DCT edition/version; completeness is validated against the uploaded DCT
+3. View extracted questions and data
+4. Review the parsed JSON output
+5. Test with different PDF formats
 
 ## Development Notes
 

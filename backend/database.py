@@ -2,7 +2,7 @@
 Database connection and session management for the FAA Audit application.
 """
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, scoped_session
 from contextlib import contextmanager
 
@@ -32,7 +32,49 @@ Session = scoped_session(session_factory)
 def init_db():
     """Initialize the database by creating all tables."""
     Base.metadata.create_all(engine)
+    _ensure_audit_columns()
+    _ensure_ownership_columns()
     print(f"Database initialized at {DATABASE_URL}")
+
+
+def _ensure_audit_columns():
+    """Add new columns to the audits table if the database already exists."""
+    inspector = inspect(engine)
+    if "audits" not in inspector.get_table_names():
+        return
+
+    columns = {col["name"] for col in inspector.get_columns("audits")}
+    alters = []
+    if "dct_edition" not in columns:
+        alters.append("ALTER TABLE audits ADD COLUMN dct_edition VARCHAR(50)")
+    if "dct_version" not in columns:
+        alters.append("ALTER TABLE audits ADD COLUMN dct_version VARCHAR(50)")
+
+    if not alters:
+        return
+
+    with engine.begin() as conn:
+        for stmt in alters:
+            conn.execute(text(stmt))
+
+
+def _ensure_ownership_columns():
+    """Add new columns to the ownership_assignments table if needed."""
+    inspector = inspect(engine)
+    if "ownership_assignments" not in inspector.get_table_names():
+        return
+
+    columns = {col["name"] for col in inspector.get_columns("ownership_assignments")}
+    alters = []
+    if "manual_section_exclusions" not in columns:
+        alters.append("ALTER TABLE ownership_assignments ADD COLUMN manual_section_exclusions TEXT")
+
+    if not alters:
+        return
+
+    with engine.begin() as conn:
+        for stmt in alters:
+            conn.execute(text(stmt))
 
 
 def drop_db():
@@ -89,6 +131,8 @@ def save_audit(audit_id: str, filename: str, parsed_data: dict) -> Audit:
             facility_name=metadata.get("facility_name"),
             facility_number=metadata.get("facility_number"),
             document_type=metadata.get("document_type"),
+            dct_edition=metadata.get("dct_edition"),
+            dct_version=metadata.get("dct_version"),
             raw_text_length=parsed_data.get("raw_text_length", 0),
             compliance_status=compliance.get("compliance_status"),
             total_findings=compliance.get("total_findings", 0),
@@ -355,6 +399,147 @@ def get_manual_sections(manual_id: str) -> list:
             .all()
         )
         return [s.to_dict() for s in sections]
+
+
+def add_manual_section_link(audit_id: str, qid: str, manual_type: str, section: str,
+                            reference: str = None, notes: str = None, added_by: str = None) -> dict:
+    """
+    Add a manual section link to a question's ownership assignment.
+    """
+    if not qid:
+        raise ValueError("QID is required")
+    if not manual_type or not section:
+        raise ValueError("manual_type and section are required")
+
+    manual_type = manual_type.strip().upper()
+    section = section.strip()
+    reference = reference.strip() if reference else None
+    notes = notes.strip() if notes else None
+
+    with get_session() as session:
+        question = session.query(Question).filter(
+            Question.audit_id == audit_id,
+            Question.qid == qid
+        ).first()
+        if not question or not question.ownership_assignment:
+            raise ValueError("Ownership assignment not found for QID")
+
+        assignment = question.ownership_assignment
+        links = assignment.manual_section_links or []
+
+        new_link = {
+            "manual_type": manual_type,
+            "section": section
+        }
+        if reference:
+            new_link["reference"] = reference
+        if notes:
+            new_link["notes"] = notes
+        if added_by:
+            new_link["added_by"] = added_by
+
+        if not any(
+            (l.get("manual_type") or l.get("manual")) == manual_type
+            and (l.get("section") or l.get("reference")) == section
+            and (l.get("reference") or "") == (reference or "")
+            for l in links
+        ):
+            links.append(new_link)
+
+        assignment.manual_section_links = links
+        # If previously excluded, remove from exclusions list
+        exclusions = assignment.manual_section_exclusions or []
+        exclusions = [
+            e for e in exclusions
+            if not (
+                (e.get("manual_type") or e.get("manual") or "").upper() == manual_type
+                and (e.get("section") or e.get("section_number") or e.get("reference")) == section
+            )
+        ]
+        assignment.manual_section_exclusions = exclusions
+        session.add(assignment)
+        session.commit()
+        session.refresh(assignment)
+        return assignment.to_dict()
+
+
+def remove_manual_section_link(audit_id: str, qid: str, manual_type: str, section: str,
+                               reference: str = None, removed_by: str = None) -> dict:
+    """
+    Remove a manual section link and exclude it from auto-suggestions.
+    """
+    if not qid:
+        raise ValueError("QID is required")
+    if not manual_type or not section:
+        raise ValueError("manual_type and section are required")
+
+    manual_type = manual_type.strip().upper()
+    section = section.strip()
+    reference = reference.strip() if reference else None
+
+    with get_session() as session:
+        question = session.query(Question).filter(
+            Question.audit_id == audit_id,
+            Question.qid == qid
+        ).first()
+        if not question or not question.ownership_assignment:
+            raise ValueError("Ownership assignment not found for QID")
+
+        assignment = question.ownership_assignment
+        links = assignment.manual_section_links or []
+
+        if manual_type == "ANY":
+            def _match(link):
+                return (
+                    (link.get("section") or link.get("section_number") or link.get("reference")) == section
+                    and (reference is None or (link.get("reference") or "") == reference)
+                )
+        else:
+            def _match(link):
+                return (
+                    (link.get("manual_type") or link.get("manual") or "").upper() == manual_type
+                    and (link.get("section") or link.get("section_number") or link.get("reference")) == section
+                    and (reference is None or (link.get("reference") or "") == reference)
+                )
+
+        links = [l for l in links if not _match(l)]
+        assignment.manual_section_links = links
+
+        exclusions = assignment.manual_section_exclusions or []
+        exclusion_types = [manual_type]
+        if manual_type == "ANY":
+            exclusion_types = set()
+            # Include types from existing links
+            for l in assignment.manual_section_links or []:
+                if (l.get("section") or l.get("section_number") or l.get("reference")) == section:
+                    exclusion_types.add((l.get("manual_type") or l.get("manual") or "OTHER").upper())
+            # Include types from auto-suggestions
+            try:
+                import manual_mapper
+                sections_by_type = manual_mapper.load_latest_manual_sections(session)
+                suggestions = manual_mapper.suggest_manual_links(question, sections_by_type)
+                for s in suggestions:
+                    if (s.get("section") or s.get("section_number") or s.get("reference")) == section:
+                        exclusion_types.add((s.get("manual_type") or s.get("manual") or "OTHER").upper())
+            except Exception:
+                pass
+            if not exclusion_types:
+                exclusion_types = {"ANY"}
+
+        for mtype in exclusion_types:
+            exclude_entry = {"manual_type": mtype, "section": section}
+            if reference:
+                exclude_entry["reference"] = reference
+            if removed_by:
+                exclude_entry["removed_by"] = removed_by
+            if exclude_entry not in exclusions:
+                exclusions.append(exclude_entry)
+        assignment.manual_section_exclusions = exclusions
+
+        session.add(assignment)
+        session.commit()
+        session.refresh(assignment)
+        return assignment.to_dict()
 
 
 # =============================================================================

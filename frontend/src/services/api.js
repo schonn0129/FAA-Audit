@@ -267,6 +267,33 @@ export const api = {
     return response.json();
   },
 
+  // MANUAL REFERENCE LINKS
+  async addManualLink(auditId, payload) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/manual-links`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to add manual link');
+    }
+    return data;
+  },
+
+  async removeManualLink(auditId, payload) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/manual-links/remove`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to remove manual link');
+    }
+    return data;
+  },
+
   // =============================================================================
   // APPLICABILITY ENDPOINTS
   // =============================================================================

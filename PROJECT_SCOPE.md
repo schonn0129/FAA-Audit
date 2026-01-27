@@ -11,6 +11,7 @@ This is a **deterministic compliance engine**, not a generative AI task. Every d
 ### Phase 1: DCT Ingestion & Validation ✅ COMPLETE
 
 **Objective:** Parse the DCT PDF to extract 100% of QIDs with associated question text, intent, and regulatory references.
+**Note:** QID counts vary by DCT edition/version; completeness is validated against the specific uploaded DCT, not a fixed number.
 
 **Implementation Status:** Complete
 - Parser extracts: Element_ID, QID, Question_Text_Full, Question_Text_Condensed, Data_Collection_Guidance, References (CFR, FAA Guidance, Other), PDF_Page_Number
@@ -196,6 +197,47 @@ This is a **deterministic compliance engine**, not a generative AI task. Every d
 
 ---
 
+## Phase 7: Mapping Memory (Reference Learning) 🧠 PLANNED
+
+**Objective:** When an auditor finalizes an element, persist the approved manual references and apply them automatically on the next audit of the same DCT edition/version and element.
+
+**Key Behavior:**
+- Auditor marks an element as “finalized”
+- System saves manual references as the preferred mapping for that element
+- On future audits with the same DCT edition/version, the system pre-populates those references
+- Manual overrides still allowed; auditors can update mappings and re-save
+
+**Deliverables:**
+- [ ] Element finalization workflow (UI + API)
+- [ ] Persisted reference mapping store (by DCT edition/version + element + QID)
+- [ ] Auto-apply saved mappings during MAP generation
+- [ ] Override and re-save workflow with audit trail
+
+---
+
+## Phase 8: Manual Structure & Compliance Gap Analysis 🧾 PLANNED
+
+**Objective:** Analyze the GMM and the first two chapters of the AIP to verify required structure, detect missing content, and flag policy/procedure conflicts tied to DCT/8900.1 guidance expectations.
+
+**Scope:**
+- GMM (all chapters)
+- AIP Chapters 1–2 only (AIP overall structure differs; later phases can expand)
+
+**Key Behavior:**
+- Validate section structure against the expected template (e.g., General, Responsibility & Authority, Policy, Procedure)
+- Identify missing required sections and ownership clarity gaps
+- Detect conflicts between policy and procedure (or conflicting statements across sections)
+- Distinguish **regulatory gaps** (CFR-required, highest severity) from **guidance gaps** (AC/8900.1 best-practice)
+- When DCT or 8900.1 guidance indicates a required program element, flag missing/weak coverage as a **guidance gap** with elevated safety impact (but not regulatory non-compliance)
+
+**Deliverables:**
+- [ ] Manual structure validator (configurable headings/aliases)
+- [ ] Gap detection engine with severity scoring (high impact for DCT/8900.1 required items)
+- [ ] Conflict detection rules (policy vs procedure, inconsistent ownership)
+- [ ] Report output (by manual, chapter, section; with evidence excerpts)
+
+---
+
 ## Key Defensive Measures
 
 ### Scope Creep Prevention
@@ -219,10 +261,10 @@ This is a **deterministic compliance engine**, not a generative AI task. Every d
 
 A quality manager can hand this package to a PMI and say:
 
-> "Here are all 247 QIDs from ED 4.1.2"
+> "Here are all 44 QIDs from ED 4.2.1 (Version 29)"
 > "Here's why we assigned each to its owner"
-> "Here are the 89 we're auditing this cycle"
-> "Here are the 158 we're deferring, with their documented owners"
+> "Here are the QIDs we're auditing this cycle"
+> "Here are the QIDs we're deferring, with their documented owners"
 > "Everything is accounted for. Nothing is orphaned."
 
 ---
@@ -321,10 +363,18 @@ FAA-Audit/
 
 ---
 
+## Glossary & Severity Definitions
+
+- **Regulatory Gap (CFR):** A required element mandated by 14 CFR is missing or insufficiently documented. This is treated as the highest severity because it represents potential non-compliance.
+- **Guidance Gap (AC/8900.1/DCT):** A best-practice element recommended by Advisory Circulars, FAA 8900.1 guidance, or DCT expectations is missing or weak. This is flagged as high safety impact but **not** labeled as regulatory non-compliance.
+- **Policy/Procedure Conflict:** A policy statement conflicts with a procedure, or procedures conflict across sections, creating ambiguity or inconsistent execution.
+- **Ownership Gap:** A required responsibility/authority is not assigned or is unclear in the manual.
+- **Manual Structure Compliance:** Presence and order of expected sections (e.g., General, Responsibility & Authority, Policy, Procedure) for applicable manuals/chapters.
+
 ## Version Control
 
 - **Document Version:** 1.1
 - **Last Updated:** 2026-01-26
-- **DCT Version:** TBD (specify when implementing)
+- **DCT Version:** ED 4.2.1 (Version 29) — 44 questions (note: other DCTs will have different question counts)
 - **AIP Version:** TBD (specify when implementing)
 - **GMM Version:** TBD (specify when implementing)

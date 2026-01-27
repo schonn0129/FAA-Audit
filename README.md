@@ -62,7 +62,8 @@ Frontend will run on http://localhost:3000
 1. Open http://localhost:3000 in your browser
 2. Click "Choose PDF File" to upload a DCT PDF
 3. Wait for processing (parsing happens automatically)
-4. View extracted questions and data in the interface
+4. Note: QID counts vary by DCT edition/version; completeness is validated against the uploaded file
+5. View extracted questions and data in the interface
 
 ## Project Structure
 

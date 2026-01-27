@@ -5,22 +5,74 @@ function MapTable({ auditId }) {
   const [mapData, setMapData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [manualLink, setManualLink] = useState({
+    qid: '',
+    manual_type: 'AIP',
+    section: '',
+    reference: '',
+    notes: ''
+  });
+  const [manualLinkStatus, setManualLinkStatus] = useState(null);
+  const [removeLink, setRemoveLink] = useState({
+    qid: '',
+    manual_type: 'ANY',
+    section: '',
+    reference: ''
+  });
+  const [removeLinkStatus, setRemoveLinkStatus] = useState(null);
 
-  useEffect(() => {
+  const loadMap = () => {
     if (!auditId) return;
-
     setLoading(true);
     setError(null);
-
     api.getAuditMap(auditId)
       .then(setMapData)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (!auditId) return;
+    loadMap();
   }, [auditId]);
 
   const handleExport = (format) => {
     const url = api.getAuditMapExportUrl(auditId, format);
     window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleAddManualLink = async (event) => {
+    event.preventDefault();
+    setManualLinkStatus(null);
+    if (!manualLink.qid || !manualLink.section) {
+      setManualLinkStatus('QID and section are required.');
+      return;
+    }
+    try {
+      await api.addManualLink(auditId, manualLink);
+      setManualLinkStatus('Manual reference added.');
+      setManualLink((prev) => ({ ...prev, section: '', reference: '', notes: '' }));
+      loadMap();
+    } catch (err) {
+      setManualLinkStatus(err.message);
+    }
+  };
+
+  const handleRemoveManualLink = async (event) => {
+    event.preventDefault();
+    setRemoveLinkStatus(null);
+    if (!removeLink.qid || !removeLink.section) {
+      setRemoveLinkStatus('QID and section are required.');
+      return;
+    }
+    try {
+      await api.removeManualLink(auditId, removeLink);
+      setRemoveLinkStatus('Manual reference removed.');
+      setRemoveLink((prev) => ({ ...prev, section: '', reference: '' }));
+      loadMap();
+    } catch (err) {
+      setRemoveLinkStatus(err.message);
+    }
   };
 
   if (loading) return <div className="map-table loading">Loading MAP...</div>;
@@ -81,6 +133,87 @@ function MapTable({ auditId }) {
           ))}
         </div>
       )}
+
+      <div className="map-manual-entry">
+        <div className="map-manual-entry-header">
+          <strong>Add Manual Reference</strong>
+          <span className="map-manual-entry-hint">Multiple sections can be added per QID.</span>
+        </div>
+        <form className="map-manual-entry-form" onSubmit={handleAddManualLink}>
+          <input
+            type="text"
+            placeholder="QID (e.g., 00004334)"
+            value={manualLink.qid}
+            onChange={(e) => setManualLink({ ...manualLink, qid: e.target.value.trim() })}
+          />
+          <select
+            value={manualLink.manual_type}
+            onChange={(e) => setManualLink({ ...manualLink, manual_type: e.target.value })}
+          >
+            <option value="AIP">AIP</option>
+            <option value="GMM">GMM</option>
+            <option value="Other">Other</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Section (e.g., 5.2.1)"
+            value={manualLink.section}
+            onChange={(e) => setManualLink({ ...manualLink, section: e.target.value })}
+          />
+          <input
+            type="text"
+            placeholder="Reference text (optional)"
+            value={manualLink.reference}
+            onChange={(e) => setManualLink({ ...manualLink, reference: e.target.value })}
+          />
+          <input
+            type="text"
+            placeholder="Notes (optional)"
+            value={manualLink.notes}
+            onChange={(e) => setManualLink({ ...manualLink, notes: e.target.value })}
+          />
+          <button type="submit" className="btn-secondary">Add Reference</button>
+        </form>
+        {manualLinkStatus && <div className="map-manual-entry-status">{manualLinkStatus}</div>}
+      </div>
+
+      <div className="map-manual-entry">
+        <div className="map-manual-entry-header">
+          <strong>Remove Manual Reference</strong>
+          <span className="map-manual-entry-hint">Removals prevent auto-suggestions from reappearing.</span>
+        </div>
+        <form className="map-manual-entry-form" onSubmit={handleRemoveManualLink}>
+          <input
+            type="text"
+            placeholder="QID (e.g., 00004334)"
+            value={removeLink.qid}
+            onChange={(e) => setRemoveLink({ ...removeLink, qid: e.target.value.trim() })}
+          />
+          <select
+            value={removeLink.manual_type}
+            onChange={(e) => setRemoveLink({ ...removeLink, manual_type: e.target.value })}
+          >
+            <option value="ANY">Any Manual</option>
+            <option value="AIP">AIP</option>
+            <option value="GMM">GMM</option>
+            <option value="Other">Other</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Section (e.g., 3.1.1)"
+            value={removeLink.section}
+            onChange={(e) => setRemoveLink({ ...removeLink, section: e.target.value })}
+          />
+          <input
+            type="text"
+            placeholder="Reference text (optional)"
+            value={removeLink.reference}
+            onChange={(e) => setRemoveLink({ ...removeLink, reference: e.target.value })}
+          />
+          <button type="submit" className="btn-secondary">Remove Reference</button>
+        </form>
+        {removeLinkStatus && <div className="map-manual-entry-status">{removeLinkStatus}</div>}
+      </div>
 
       <div className="map-table-container">
         <table>

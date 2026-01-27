@@ -5,6 +5,7 @@ Flask application for processing and managing FAA DCT audit documents.
 """
 
 import os
+import re
 import uuid
 import logging
 from datetime import datetime
@@ -101,6 +102,19 @@ def upload_pdf():
         logger.info(f"Parsing PDF: {filepath}")
         with FAAPDFParser(filepath) as parser:
             parsed_data = parser.parse()
+
+        # Fallback: derive DCT edition/version from filename if missing in metadata
+        metadata = parsed_data.setdefault("metadata", {})
+        if not metadata.get("dct_edition") or not metadata.get("dct_version"):
+            name = filename or ""
+            if not metadata.get("dct_edition"):
+                ed_match = re.search(r'ED[_-]?(\d+[_\.]\d+[_\.]\d+)', name, re.IGNORECASE)
+                if ed_match:
+                    metadata["dct_edition"] = ed_match.group(1).replace('_', '.')
+            if not metadata.get("dct_version"):
+                ver_match = re.search(r'V(?:ersion)?[_-]?(\d+)', name, re.IGNORECASE)
+                if ver_match:
+                    metadata["dct_version"] = ver_match.group(1)
 
         # Save to database
         audit = db.save_audit(record_id, filename, parsed_data)
@@ -479,6 +493,75 @@ def get_ownership(audit_id):
         "assignments": assignments,
         "summary": summary
     }), 200
+
+
+@app.route('/api/audits/<audit_id>/manual-links', methods=['POST'])
+def add_manual_link(audit_id):
+    """
+    Add a manual reference link for a specific QID.
+    """
+    data = request.get_json() or {}
+    qid = data.get("qid")
+    manual_type = data.get("manual_type")
+    section = data.get("section")
+    reference = data.get("reference")
+    notes = data.get("notes")
+    added_by = data.get("added_by")
+
+    if not qid or not manual_type or not section:
+        return jsonify({"error": "qid, manual_type, and section are required"}), 400
+
+    try:
+        assignment = db.add_manual_section_link(
+            audit_id=audit_id,
+            qid=qid,
+            manual_type=manual_type,
+            section=section,
+            reference=reference,
+            notes=notes,
+            added_by=added_by
+        )
+        return jsonify({"manual_section_links": assignment.get("manual_section_links", [])}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error adding manual link: {e}", exc_info=True)
+        return jsonify({"error": "Failed to add manual link"}), 500
+
+
+@app.route('/api/audits/<audit_id>/manual-links/remove', methods=['POST'])
+def remove_manual_link(audit_id):
+    """
+    Remove a manual reference link for a specific QID.
+    """
+    data = request.get_json() or {}
+    qid = data.get("qid")
+    manual_type = data.get("manual_type")
+    section = data.get("section")
+    reference = data.get("reference")
+    removed_by = data.get("removed_by")
+
+    if not qid or not manual_type or not section:
+        return jsonify({"error": "qid, manual_type, and section are required"}), 400
+
+    try:
+        assignment = db.remove_manual_section_link(
+            audit_id=audit_id,
+            qid=qid,
+            manual_type=manual_type,
+            section=section,
+            reference=reference,
+            removed_by=removed_by
+        )
+        return jsonify({
+            "manual_section_links": assignment.get("manual_section_links", []),
+            "manual_section_exclusions": assignment.get("manual_section_exclusions", [])
+        }), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error removing manual link: {e}", exc_info=True)
+        return jsonify({"error": "Failed to remove manual link"}), 500
 
 
 @app.route('/api/audits/<audit_id>/ownership/<qid>', methods=['PUT'])

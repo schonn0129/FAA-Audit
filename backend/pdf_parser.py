@@ -166,6 +166,8 @@ class FAAPDFParser:
             "facility_name": None,
             "facility_number": None,
             "document_type": None,
+            "dct_edition": None,
+            "dct_version": None,
             "page_count": len(self.pdf.pages)
         }
         
@@ -229,7 +231,26 @@ class FAAPDFParser:
             metadata["document_type"] = "violation_report"
         else:
             metadata["document_type"] = "unknown"
-        
+
+        # Extract DCT edition and version if present
+        edition_match = re.search(r'\bED[-\s]*([0-9]+\.[0-9]+\.[0-9]+)\b', text, re.IGNORECASE)
+        if not edition_match:
+            edition_match = re.search(r'\bEdition[:\s]*([0-9]+\.[0-9]+\.[0-9]+)\b', text, re.IGNORECASE)
+        if not edition_match:
+            edition_match = re.search(r'\bDCT\s*ED[-\s]*([0-9]+\.[0-9]+\.[0-9]+)\b', text, re.IGNORECASE)
+        if edition_match:
+            metadata["dct_edition"] = edition_match.group(1)
+
+        version_match = re.search(r'\bVersion[:\s]*([0-9]+)\b', text, re.IGNORECASE)
+        if not version_match:
+            version_match = re.search(r'\bVer\.?\s*(\d+)\b', text, re.IGNORECASE)
+        if not version_match:
+            version_match = re.search(r'\bV(?:ersion)?\s*(\d+)\b', text, re.IGNORECASE)
+        if not version_match:
+            version_match = re.search(r'\bRevision[:\s]*([0-9]+)\b', text, re.IGNORECASE)
+        if version_match:
+            metadata["dct_version"] = version_match.group(1)
+
         return metadata
     
     def extract_tables(self) -> List[Dict[str, Any]]:
@@ -452,19 +473,16 @@ class FAAPDFParser:
         qid_pattern = r'QID:\s*(\d{8})'
         qid_matches = list(re.finditer(qid_pattern, combined_text))
 
+        # Precompute all question number positions to allow spanning past QID
+        question_num_pattern = r'(?:^|\n)\s*(\d{1,2})\s+(Do|Does|Is|Are)\s+'
+        qnum_matches = list(re.finditer(question_num_pattern, combined_text))
+
         for qid_match in qid_matches:
             qid = qid_match.group(1)
             qid_pos = qid_match.start()
 
             # Find the question number that precedes this QID
-            # Look backwards from QID position to find the question number
-            text_before_qid = combined_text[:qid_pos]
-
-            # Find question number pattern: starts with number at beginning of line or after newline
-            # Pattern matches: "1 Do procedures..." or "26 Does the CAMP..."
-            question_num_pattern = r'(?:^|\n)\s*(\d{1,2})\s+(Do|Does|Is|Are)\s+'
-            q_matches = list(re.finditer(question_num_pattern, text_before_qid))
-
+            q_matches = [m for m in qnum_matches if m.start() < qid_pos]
             if not q_matches:
                 continue
 
@@ -473,18 +491,53 @@ class FAAPDFParser:
             question_number = last_q_match.group(1)
             question_start = last_q_match.start()
 
-            # Extract the full question text from question start to QID
-            question_block = text_before_qid[question_start:]
+            # Use the next question number (if any) to bound the block
+            next_q_match = next((m for m in qnum_matches if m.start() > qid_pos), None)
+            block_end = next_q_match.start() if next_q_match else min(len(combined_text), qid_pos + 1200)
+            question_block = combined_text[question_start:block_end]
 
             # Also include a bit after QID to capture any trailing metadata
             text_after_qid = combined_text[qid_pos:qid_pos + 200]
             full_block = question_block + text_after_qid
 
-            # Extract question text - it ends before REFERENCES or Safety Attribute
+            # Remove inline metadata that can interrupt question text in table layouts
+            question_block_clean = question_block
+            question_block_clean = re.sub(
+                r'REFERENCES:\s*.*?(?=(Safety Attribute:|Question Type:|Scoping Attribute:|NOTE:|$))',
+                ' ',
+                question_block_clean,
+                flags=re.DOTALL | re.IGNORECASE
+            )
+            question_block_clean = re.sub(
+                r'Safety Attribute:\s*.*?(?=(REFERENCES:|Question Type:|Scoping Attribute:|NOTE:|$))',
+                ' ',
+                question_block_clean,
+                flags=re.DOTALL | re.IGNORECASE
+            )
+            question_block_clean = re.sub(
+                r'Question Type:\s*.*?(?=(REFERENCES:|Safety Attribute:|Scoping Attribute:|NOTE:|$))',
+                ' ',
+                question_block_clean,
+                flags=re.DOTALL | re.IGNORECASE
+            )
+            question_block_clean = re.sub(
+                r'Scoping Attribute:\s*.*?(?=(REFERENCES:|Safety Attribute:|Question Type:|NOTE:|$))',
+                ' ',
+                question_block_clean,
+                flags=re.DOTALL | re.IGNORECASE
+            )
+            question_block_clean = re.sub(
+                r'NOTE:\s*.*?(?=(REFERENCES:|Safety Attribute:|Question Type:|Scoping Attribute:|$))',
+                ' ',
+                question_block_clean,
+                flags=re.DOTALL | re.IGNORECASE
+            )
+
+            # Extract question text from cleaned block
             question_text_match = re.search(
-                r'^\s*\d{1,2}\s+((?:Do|Does|Is|Are).+?)(?=REFERENCES:|Safety Attribute:|$)',
-                question_block,
-                re.DOTALL
+                r'^\s*\d{1,2}\s+((?:Do|Does|Is|Are).+)$',
+                question_block_clean,
+                re.DOTALL | re.IGNORECASE
             )
 
             if not question_text_match:
@@ -493,9 +546,17 @@ class FAAPDFParser:
             question_text_full = question_text_match.group(1).strip()
             # Clean up the question text - normalize whitespace
             question_text_full = re.sub(r'\s+', ' ', question_text_full).strip()
-            # Remove trailing answer options if present
-            question_text_full = re.sub(r'\s*[◯○]\s*(Yes|No|Not Applicable).*$', '', question_text_full, flags=re.IGNORECASE)
+            # Remove checkbox answer options without truncating question text
+            question_text_full = re.sub(r'\s*[◯○]\s*(Yes|No|Not Applicable)\s*', ' ', question_text_full, flags=re.IGNORECASE)
+            # Remove broken "Not Applicable" variants that may split across lines
+            question_text_full = re.sub(r'\bN\s*o\s*t\s*Applicable\b', ' ', question_text_full, flags=re.IGNORECASE)
+            question_text_full = re.sub(r'\bNot\s*Applicable\b', ' ', question_text_full, flags=re.IGNORECASE)
+            question_text_full = re.sub(r'\bt\s*Applicable\b', ' ', question_text_full, flags=re.IGNORECASE)
+            # Remove any leftover inline metadata fragments
+            question_text_full = re.sub(r'\bREFERENCES:\b.*$', '', question_text_full, flags=re.IGNORECASE).strip()
+            question_text_full = re.sub(r'\bQID:\s*\d{8}\b', '', question_text_full, flags=re.IGNORECASE).strip()
             question_text_full = question_text_full.strip()
+            question_text_full = re.sub(r'\s+', ' ', question_text_full).strip()
 
             # Extract REFERENCES - look in full block
             ref_match = re.search(r'REFERENCES:\s*([^\n]+)', full_block)

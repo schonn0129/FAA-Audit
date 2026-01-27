@@ -166,6 +166,7 @@ Identifies audit findings and violations by searching for:
 
 #### 5. **DCT Question Extraction**
 Extracts structured DCT (Data Collection Tool) questions with all required fields:
+Note: QID counts vary by DCT edition/version; completeness is validated against the uploaded DCT, not a fixed number.
 
 **Extracted Fields:**
 - **Element_ID**: Element identifier (e.g., 4.2.2, 4.1.1)
