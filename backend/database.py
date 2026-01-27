@@ -49,6 +49,8 @@ def _ensure_audit_columns():
         alters.append("ALTER TABLE audits ADD COLUMN dct_edition VARCHAR(50)")
     if "dct_version" not in columns:
         alters.append("ALTER TABLE audits ADD COLUMN dct_version VARCHAR(50)")
+    if "pinned_manual_ids" not in columns:
+        alters.append("ALTER TABLE audits ADD COLUMN pinned_manual_ids TEXT")
 
     if not alters:
         return
@@ -387,6 +389,28 @@ def get_latest_manual_by_type(manual_type: str) -> dict:
         return manual.to_dict() if manual else None
 
 
+def get_audit_pinned_manual_ids(audit_id: str) -> dict:
+    """Return pinned manual IDs for an audit (by manual type)."""
+    with get_session() as session:
+        audit = session.query(Audit).filter(Audit.id == audit_id).first()
+        if not audit:
+            return {}
+        return audit.pinned_manual_ids or {}
+
+
+def set_audit_pinned_manual_ids(audit_id: str, pinned_manual_ids: dict) -> dict:
+    """Persist pinned manual IDs for an audit."""
+    with get_session() as session:
+        audit = session.query(Audit).filter(Audit.id == audit_id).first()
+        if not audit:
+            return {}
+        audit.pinned_manual_ids = pinned_manual_ids or {}
+        session.add(audit)
+        session.commit()
+        session.refresh(audit)
+        return audit.pinned_manual_ids or {}
+
+
 def get_manual_sections(manual_id: str) -> list:
     """
     Get all sections for a manual.
@@ -425,7 +449,8 @@ def add_manual_section_link(audit_id: str, qid: str, manual_type: str, section: 
             raise ValueError("Ownership assignment not found for QID")
 
         assignment = question.ownership_assignment
-        links = assignment.manual_section_links or []
+        # Create a copy of the list to ensure SQLAlchemy detects the change
+        links = list(assignment.manual_section_links or [])
 
         new_link = {
             "manual_type": manual_type,
@@ -448,9 +473,9 @@ def add_manual_section_link(audit_id: str, qid: str, manual_type: str, section: 
 
         assignment.manual_section_links = links
         # If previously excluded, remove from exclusions list
-        exclusions = assignment.manual_section_exclusions or []
+        # Create a new list to ensure SQLAlchemy detects the change
         exclusions = [
-            e for e in exclusions
+            e for e in (assignment.manual_section_exclusions or [])
             if not (
                 (e.get("manual_type") or e.get("manual") or "").upper() == manual_type
                 and (e.get("section") or e.get("section_number") or e.get("reference")) == section
@@ -486,7 +511,8 @@ def remove_manual_section_link(audit_id: str, qid: str, manual_type: str, sectio
             raise ValueError("Ownership assignment not found for QID")
 
         assignment = question.ownership_assignment
-        links = assignment.manual_section_links or []
+        # Create a copy to ensure SQLAlchemy detects the change
+        links = list(assignment.manual_section_links or [])
 
         if manual_type == "ANY":
             def _match(link):
@@ -505,7 +531,8 @@ def remove_manual_section_link(audit_id: str, qid: str, manual_type: str, sectio
         links = [l for l in links if not _match(l)]
         assignment.manual_section_links = links
 
-        exclusions = assignment.manual_section_exclusions or []
+        # Create a copy to ensure SQLAlchemy detects the change
+        exclusions = list(assignment.manual_section_exclusions or [])
         exclusion_types = [manual_type]
         if manual_type == "ANY":
             exclusion_types = set()

@@ -8,8 +8,7 @@ keyword overlap and CFR citations.
 import re
 from typing import Any, Dict, List, Tuple
 
-import database as db
-from models import Manual, ManualSection, Question
+from models import Audit, Manual, ManualSection, Question
 
 STOPWORDS = {
     "the", "and", "for", "with", "that", "this", "from", "into", "when", "then",
@@ -82,9 +81,12 @@ def _select_best_section(question: Question, sections: List[ManualSection]) -> D
     }
 
 
-def load_latest_manual_sections(session) -> Dict[str, List[ManualSection]]:
+def load_latest_manual_sections(session, audit_id: str = None) -> Dict[str, List[ManualSection]]:
     """
     Load sections for the most recently uploaded manual of each type.
+
+    If audit_id is provided, pin the manuals per type for that audit on first use
+    to ensure repeatable mapping even after new manual uploads.
     """
     manuals = (
         session.query(Manual)
@@ -97,15 +99,28 @@ def load_latest_manual_sections(session) -> Dict[str, List[ManualSection]]:
         if manual.manual_type not in latest_by_type:
             latest_by_type[manual.manual_type] = manual
 
+    pinned_ids: Dict[str, str] = {}
+    if audit_id:
+        audit = session.query(Audit).filter(Audit.id == audit_id).first()
+        if audit:
+            pinned_ids = audit.pinned_manual_ids or {}
+            if not pinned_ids:
+                pinned_ids = {mtype: manual.id for mtype, manual in latest_by_type.items()}
+                audit.pinned_manual_ids = pinned_ids
+                session.add(audit)
+                session.flush()
+
     sections_by_type: Dict[str, List[ManualSection]] = {}
     for manual_type, manual in latest_by_type.items():
+        manual_id = pinned_ids.get(manual_type, manual.id) if pinned_ids else manual.id
         sections = (
             session.query(ManualSection)
-            .filter(ManualSection.manual_id == manual.id)
+            .filter(ManualSection.manual_id == manual_id)
             .order_by(ManualSection.page_number.asc())
             .all()
         )
-        sections_by_type[manual_type] = sections
+        if sections:
+            sections_by_type[manual_type] = sections
 
     return sections_by_type
 
@@ -132,7 +147,7 @@ def suggest_manual_links_for_audit(audit_id: str) -> Dict[str, List[Dict[str, An
     links: Dict[str, List[Dict[str, Any]]] = {}
 
     with db.get_session() as session:
-        sections_by_type = load_latest_manual_sections(session)
+        sections_by_type = load_latest_manual_sections(session, audit_id=audit_id)
         if not sections_by_type:
             return links
 

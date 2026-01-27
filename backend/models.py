@@ -30,6 +30,7 @@ class Audit(Base):
     element_id = Column(String(50), nullable=True)  # e.g., "4.2.1"
     dct_edition = Column(String(50), nullable=True)  # e.g., "4.2.1"
     dct_version = Column(String(50), nullable=True)  # e.g., "29"
+    pinned_manual_ids = Column(JSON, default=dict)  # {"AIP": manual_id, "GMM": manual_id}
 
     # Raw text length for reference
     raw_text_length = Column(Integer, default=0)
@@ -65,7 +66,8 @@ class Audit(Base):
                 "page_count": self.page_count,
                 "element_id": self.element_id,
                 "dct_edition": self.dct_edition,
-                "dct_version": self.dct_version
+                "dct_version": self.dct_version,
+                "pinned_manual_ids": self.pinned_manual_ids or {}
             },
             "questions": [q.to_dict() for q in self.questions],
             "findings": [f.to_dict() for f in self.findings],

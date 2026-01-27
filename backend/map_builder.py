@@ -98,7 +98,7 @@ def build_map_rows(audit_id: str) -> Tuple[List[Dict[str, Any]], List[str], List
             .order_by(Question.element_id, Question.question_number, Question.qid)
         )
 
-        sections_by_type = manual_mapper.load_latest_manual_sections(session)
+        sections_by_type = manual_mapper.load_latest_manual_sections(session, audit_id=audit_id)
         rows: List[Dict[str, Any]] = []
         not_applicable_count = 0
         for question, assignment, applicability in query.all():
