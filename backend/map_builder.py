@@ -75,7 +75,7 @@ def _get_latest_manuals(session) -> List[Dict[str, Any]]:
     return [m.to_dict() for m in latest_by_type.values()]
 
 
-def build_map_rows(audit_id: str) -> Tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]], int]:
+def build_map_rows(audit_id: str, include_debug: bool = False) -> Tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]], int]:
     """
     Build MAP rows for an audit, filtered to in-scope functions.
 
@@ -152,7 +152,7 @@ def build_map_rows(audit_id: str) -> Tuple[List[Dict[str, Any]], List[str], List
                             merged.append(link)
                             existing_keys.add(key)
                     manual_links = merged
-            rows.append({
+            row = {
                 "QID": question.qid or "",
                 "Question_Text": question.question_text_full or question.question_text_condensed or "",
                 "AIP_Reference": _extract_manual_refs(manual_links, "AIP"),
@@ -163,15 +163,34 @@ def build_map_rows(audit_id: str) -> Tuple[List[Dict[str, Any]], List[str], List
                 "Applicability_Reason": applicability_reason,
                 "Audit_Finding": "",
                 "Compliance_Status": ""
-            })
+            }
+            if include_debug:
+                debug_links = []
+                for link in manual_links:
+                    if (link.get("source") or "").lower() != "auto":
+                        continue
+                    debug_links.append({
+                        "manual_type": link.get("manual_type") or link.get("manual"),
+                        "section": link.get("section") or link.get("section_number") or link.get("reference"),
+                        "section_title": link.get("section_title"),
+                        "page_number": link.get("page_number"),
+                        "paragraph": link.get("paragraph"),
+                        "score": link.get("score"),
+                        "match_signals": link.get("match_signals")
+                    })
+                row["auto_suggestions_debug"] = debug_links
+            rows.append(row)
         manuals_used = _get_latest_manuals(session)
 
     return rows, in_scope_functions, manuals_used, not_applicable_count
 
 
-def generate_map_payload(audit_id: str) -> Dict[str, Any]:
+def generate_map_payload(audit_id: str, include_debug: bool = False) -> Dict[str, Any]:
     """Generate MAP response payload for the API."""
-    rows, in_scope_functions, manuals_used, not_applicable_count = build_map_rows(audit_id)
+    rows, in_scope_functions, manuals_used, not_applicable_count = build_map_rows(
+        audit_id,
+        include_debug=include_debug
+    )
     return {
         "audit_id": audit_id,
         "generated_date": datetime.utcnow().isoformat(),

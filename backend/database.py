@@ -354,6 +354,52 @@ def save_manual_with_sections(manual_id: str, filename: str, manual_type: str,
         return manual.to_dict()
 
 
+def replace_manual_sections(manual_id: str, page_count: int, sections: list,
+                            version: str = None, status: str = "processed") -> dict:
+    """
+    Replace all sections for an existing manual.
+
+    Args:
+        manual_id: UUID for the manual
+        page_count: Number of pages
+        sections: List of section dictionaries
+        version: Optional manual version
+        status: Manual processing status
+
+    Returns:
+        Manual dictionary
+    """
+    with get_session() as session:
+        manual = session.query(Manual).filter(Manual.id == manual_id).first()
+        if not manual:
+            return None
+
+        session.query(ManualSection).filter(
+            ManualSection.manual_id == manual_id
+        ).delete(synchronize_session=False)
+
+        for section in sections:
+            manual_section = ManualSection(
+                manual_id=manual_id,
+                section_number=section.get("section_number"),
+                section_title=section.get("section_title"),
+                section_text=section.get("section_text"),
+                page_number=section.get("page_number"),
+                cfr_citations=section.get("cfr_citations", []),
+                suggested_owner=section.get("suggested_owner")
+            )
+            session.add(manual_section)
+
+        manual.page_count = page_count
+        manual.version = version
+        manual.status = status
+
+        session.add(manual)
+        session.commit()
+        session.refresh(manual)
+        return manual.to_dict()
+
+
 def get_manuals(manual_type: str = None) -> list:
     """
     Get list of uploaded manuals.

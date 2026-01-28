@@ -116,3 +116,34 @@ chmod 755 uploads
 3. Verify file is a valid PDF: `file your_file.pdf`
 4. Try with a known-good PDF file first
 5. Check that both frontend (port 3000) and backend (port 5000) are running
+
+## Manual Parsing Quality Warnings
+
+If a manual upload returns a `parse_report` with `quality = warning` or `fail`,
+the auto-mapping suggestions may be unreliable.
+
+**What to look for in `parse_report`:**
+- `quality`: `ok` | `warning` | `fail`
+- `warnings`: List of issues (e.g., "Text extraction is very low")
+- `metrics`: Page count, section count, avg section length
+
+**Fix**: Upload a cleaner PDF or reprocess the manual after improving the source.
+
+## Re-Parse an Existing Manual (No Re-Upload)
+
+Use the re-parse endpoint to rebuild sections after parser improvements or
+after replacing the manual file on disk:
+
+```bash
+curl -X POST http://localhost:5000/api/manuals/<manual_id>/reparse
+```
+
+## MAP Debug Rationale
+
+To see why a manual reference was suggested, request MAP data with debug enabled:
+
+```bash
+http://localhost:5000/api/audits/<audit_id>/map?debug=1
+```
+
+Each row includes `auto_suggestions_debug` with scores and keyword/phrase hits.

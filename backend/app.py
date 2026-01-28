@@ -397,11 +397,59 @@ def upload_manual():
             version=parsed.get("version")
         )
         manual["section_count"] = len(parsed.get("sections", []))
+        manual["parse_report"] = parsed.get("parse_report", {})
         return jsonify(manual), 200
     except Exception as e:
         logger.error(f"Error processing manual: {e}", exc_info=True)
         return jsonify({
             "error": "Failed to process manual",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/manuals/<manual_id>/reparse', methods=['POST'])
+def reparse_manual(manual_id):
+    """Re-parse an existing manual PDF and replace its sections."""
+    import manual_parser
+
+    manual = db.get_manual(manual_id)
+    if not manual:
+        return jsonify({"error": "Manual not found"}), 404
+
+    filename = manual.get("filename")
+    if not filename:
+        return jsonify({"error": "Manual filename missing"}), 400
+
+    filepath = os.path.join(MANUAL_UPLOAD_FOLDER, f"{manual_id}_{filename}")
+    if not os.path.exists(filepath):
+        # Fallback: search for any file prefixed by manual_id
+        matches = [
+            f for f in os.listdir(MANUAL_UPLOAD_FOLDER)
+            if f.startswith(f"{manual_id}_")
+        ]
+        if matches:
+            filepath = os.path.join(MANUAL_UPLOAD_FOLDER, matches[0])
+        else:
+            return jsonify({"error": "Manual file not found on disk"}), 404
+
+    try:
+        parsed = manual_parser.parse_manual_pdf(filepath)
+        updated = db.replace_manual_sections(
+            manual_id=manual_id,
+            page_count=parsed.get("page_count", 0),
+            sections=parsed.get("sections", []),
+            version=parsed.get("version"),
+            status="processed"
+        )
+        if not updated:
+            return jsonify({"error": "Failed to update manual"}), 500
+        updated["section_count"] = len(parsed.get("sections", []))
+        updated["parse_report"] = parsed.get("parse_report", {})
+        return jsonify(updated), 200
+    except Exception as e:
+        logger.error(f"Error reparsing manual: {e}", exc_info=True)
+        return jsonify({
+            "error": "Failed to reparse manual",
             "message": str(e)
         }), 500
 
@@ -989,7 +1037,8 @@ def get_audit_map(audit_id):
     if not assignments:
         return jsonify({"error": "No ownership assignments found. Run POST /api/audits/{id}/ownership first."}), 400
 
-    payload = map_builder.generate_map_payload(audit_id)
+    debug_flag = request.args.get('debug', '').lower() in ('1', 'true', 'yes')
+    payload = map_builder.generate_map_payload(audit_id, include_debug=debug_flag)
     return jsonify(payload), 200
 
 

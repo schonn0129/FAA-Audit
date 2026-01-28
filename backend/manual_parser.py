@@ -25,6 +25,82 @@ CFR_PATTERN = re.compile(
 )
 
 
+def _build_parse_report(page_texts: List[str], sections: List[Dict[str, Any]],
+                        headings_by_page: Dict[int, int],
+                        header_footer_lines: List[str]) -> Dict[str, Any]:
+    page_count = len(page_texts)
+    combined = "\n".join(page_texts)
+    total_chars = len(combined)
+    alnum_chars = sum(1 for c in combined if c.isalnum())
+    alnum_ratio = (alnum_chars / total_chars) if total_chars else 0.0
+    pages_with_text = sum(1 for t in page_texts if t.strip())
+    pages_with_headings = len([p for p, count in headings_by_page.items() if count > 0])
+    section_text_lengths = [len(s.get("section_text", "") or "") for s in sections]
+    avg_section_chars = (
+        sum(section_text_lengths) / len(section_text_lengths)
+        if section_text_lengths else 0.0
+    )
+    avg_section_words = (
+        sum(len((s.get("section_text", "") or "").split()) for s in sections) / len(sections)
+        if sections else 0.0
+    )
+
+    warnings: List[str] = []
+    if total_chars < 500 or pages_with_text == 0:
+        warnings.append("Text extraction is very low; manual may be scanned or unreadable.")
+    if not sections:
+        warnings.append("No section headings detected; sectioning may be unreliable.")
+    elif page_count > 10 and len(sections) < max(3, page_count // 10):
+        warnings.append("Very few sections detected for the page count.")
+    if avg_section_words and avg_section_words < 50:
+        warnings.append("Average section length is short; matches may be weak.")
+    if alnum_ratio and alnum_ratio < 0.6:
+        warnings.append("Low alphanumeric density detected; text may be noisy.")
+    if page_count and (pages_with_text / page_count) < 0.7:
+        warnings.append("Many pages have little or no text.")
+    if page_count and (pages_with_headings / page_count) < 0.2 and sections:
+        warnings.append("Few pages contain headings; section boundaries may be inaccurate.")
+
+    if total_chars < 500 or alnum_ratio < 0.3:
+        quality = "fail"
+    elif warnings:
+        quality = "warning"
+    else:
+        quality = "ok"
+
+    return {
+        "quality": quality,
+        "warnings": warnings,
+        "metrics": {
+            "page_count": page_count,
+            "sections": len(sections),
+            "pages_with_text": pages_with_text,
+            "pages_with_headings": pages_with_headings,
+            "avg_section_chars": round(avg_section_chars, 1),
+            "avg_section_words": round(avg_section_words, 1),
+            "alnum_ratio": round(alnum_ratio, 3),
+            "header_footer_lines_removed": len(header_footer_lines)
+        }
+    }
+
+
+def _collect_header_footer_lines(pages: List[List[str]]) -> List[str]:
+    if not pages:
+        return []
+    candidates: Dict[str, int] = {}
+    for lines in pages:
+        if not lines:
+            continue
+        heads = lines[:2]
+        tails = lines[-2:] if len(lines) > 2 else []
+        for line in heads + tails:
+            if len(line) > 120:
+                continue
+            candidates[line] = candidates.get(line, 0) + 1
+    threshold = max(3, int(len(pages) * 0.3))
+    return [line for line, count in candidates.items() if count >= threshold]
+
+
 def _match_heading(line: str) -> Optional[Dict[str, str]]:
     """Return section metadata if the line matches a heading pattern."""
     for pattern in SECTION_PATTERNS:
@@ -66,33 +142,39 @@ def parse_manual_pdf(pdf_path: str) -> Dict[str, Any]:
     """
     sections: List[Dict[str, Any]] = []
     page_texts: List[str] = []
+    page_lines: List[List[str]] = []
+    headings_by_page: Dict[int, int] = {}
 
     with pdfplumber.open(pdf_path) as pdf:
         for page_num, page in enumerate(pdf.pages, 1):
             text = page.extract_text() or ""
             page_texts.append(text)
-
             lines = [line.strip() for line in text.split('\n') if line.strip()]
-            current = None
+            page_lines.append(lines)
 
-            for line in lines:
-                heading = _match_heading(line)
-                if heading:
-                    if current:
-                        sections.append(current)
-                    current = {
-                        "section_number": heading.get("section_number"),
-                        "section_title": heading.get("section_title"),
-                        "section_text": "",
-                        "page_number": page_num
-                    }
-                    continue
-
+    header_footer_lines = _collect_header_footer_lines(page_lines)
+    current = None
+    for page_num, lines in enumerate(page_lines, 1):
+        filtered = [line for line in lines if line not in header_footer_lines]
+        for line in filtered:
+            heading = _match_heading(line)
+            if heading:
+                headings_by_page[page_num] = headings_by_page.get(page_num, 0) + 1
                 if current:
-                    current["section_text"] += (line + " ")
+                    sections.append(current)
+                current = {
+                    "section_number": heading.get("section_number"),
+                    "section_title": heading.get("section_title"),
+                    "section_text": "",
+                    "page_number": page_num
+                }
+                continue
 
             if current:
-                sections.append(current)
+                current["section_text"] += (line + " ")
+
+    if current:
+        sections.append(current)
 
     if not sections:
         combined_text = "\n\n".join(page_texts).strip()
@@ -113,5 +195,6 @@ def parse_manual_pdf(pdf_path: str) -> Dict[str, Any]:
     return {
         "page_count": len(page_texts),
         "version": _extract_version(combined_all),
-        "sections": sections
+        "sections": sections,
+        "parse_report": _build_parse_report(page_texts, sections, headings_by_page, header_footer_lines)
     }
