@@ -235,6 +235,23 @@ export default function CoverageDashboard({ auditId, onViewDeferred }) {
           </p>
         </div>
       )}
+
+      {/* PDF Export Section (Phase 6) */}
+      <div className="pdf-export-section">
+        <button
+          onClick={() => {
+            const url = api.getCompliancePdfExportUrl(auditId);
+            window.open(url, '_blank', 'noopener,noreferrer');
+          }}
+          className="btn-primary btn-export-pdf"
+        >
+          Export PDF Compliance Package
+        </button>
+        <p className="export-note">
+          Generates a complete compliance package with Executive Summary, Ownership Table,
+          In-Scope MAP, Deferred Items Log, Methodology Appendix, and Sign-off Page.
+        </p>
+      </div>
     </div>
   );
 }

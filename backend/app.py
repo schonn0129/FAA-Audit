@@ -1039,6 +1039,59 @@ def export_audit_map(audit_id):
     return jsonify({"error": f"Export format '{format_type}' not supported. Use 'csv' or 'xlsx'."}), 400
 
 
+# =============================================================================
+# PDF EXPORT (Phase 6)
+# =============================================================================
+
+@app.route('/api/audits/<audit_id>/export/pdf', methods=['GET'])
+def export_audit_pdf(audit_id):
+    """
+    Generate and download the PDF compliance package for PMI review.
+
+    This endpoint generates a deterministic PDF containing:
+    - Executive Summary
+    - Complete QID Ownership Table
+    - In-Scope MAP Worksheets
+    - Deferred Items Log
+    - Methodology Appendix
+    - Sign-off Page
+    """
+    from flask import Response
+    import pdf_generator
+
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Audit not found"}), 404
+
+    assignments = db.get_ownership_assignments(audit_id)
+    if not assignments:
+        return jsonify({
+            "error": "No ownership assignments found. Run POST /api/audits/{id}/ownership first."
+        }), 400
+
+    try:
+        pdf_bytes = pdf_generator.generate_compliance_pdf(audit_id)
+
+        # Generate filename from audit
+        base_name = record["filename"].rsplit(".", 1)[0]
+        timestamp = datetime.utcnow().strftime("%Y%m%d")
+        filename = f"{base_name}_compliance_package_{timestamp}.pdf"
+
+        return Response(
+            pdf_bytes,
+            mimetype='application/pdf',
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"'
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error generating PDF for audit {audit_id}: {e}", exc_info=True)
+        return jsonify({
+            "error": "Failed to generate PDF",
+            "message": str(e)
+        }), 500
+
+
 if __name__ == '__main__':
     print("Starting FAA DCT Audit Application...")
     port = int(os.getenv("BACKEND_PORT", "5000"))

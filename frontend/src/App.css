@@ -965,6 +965,54 @@ body {
 }
 
 /* =============================================================================
+   PDF Export Section (Phase 6)
+   ============================================================================= */
+
+.pdf-export-section {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #1f4788 0%, #2d5aa0 100%);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.btn-export-pdf {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 2rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  background: #fff;
+  color: #1f4788;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.btn-export-pdf:hover {
+  background: #f0f4f8;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.btn-export-pdf:active {
+  transform: translateY(0);
+}
+
+.export-note {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.9);
+  max-width: 500px;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.4;
+}
+
+/* =============================================================================
    Deferred Items List (Phase 3)
    ============================================================================= */
 
