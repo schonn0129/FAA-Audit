@@ -34,6 +34,7 @@ def init_db():
     Base.metadata.create_all(engine)
     _ensure_audit_columns()
     _ensure_ownership_columns()
+    _ensure_embedding_columns()
     print(f"Database initialized at {DATABASE_URL}")
 
 
@@ -70,6 +71,35 @@ def _ensure_ownership_columns():
     alters = []
     if "manual_section_exclusions" not in columns:
         alters.append("ALTER TABLE ownership_assignments ADD COLUMN manual_section_exclusions TEXT")
+
+    if not alters:
+        return
+
+    with engine.begin() as conn:
+        for stmt in alters:
+            conn.execute(text(stmt))
+
+
+def _ensure_embedding_columns():
+    """Add embedding columns to questions and manual_sections tables if needed."""
+    inspector = inspect(engine)
+    alters = []
+
+    # Check questions table
+    if "questions" in inspector.get_table_names():
+        columns = {col["name"] for col in inspector.get_columns("questions")}
+        if "intent_embedding" not in columns:
+            alters.append("ALTER TABLE questions ADD COLUMN intent_embedding BLOB")
+        if "intent_embedding_model" not in columns:
+            alters.append("ALTER TABLE questions ADD COLUMN intent_embedding_model VARCHAR(100)")
+
+    # Check manual_sections table
+    if "manual_sections" in inspector.get_table_names():
+        columns = {col["name"] for col in inspector.get_columns("manual_sections")}
+        if "content_embedding" not in columns:
+            alters.append("ALTER TABLE manual_sections ADD COLUMN content_embedding BLOB")
+        if "content_embedding_model" not in columns:
+            alters.append("ALTER TABLE manual_sections ADD COLUMN content_embedding_model VARCHAR(100)")
 
     if not alters:
         return
@@ -1127,6 +1157,255 @@ def get_scoped_ownership_assignments(audit_id: str) -> dict:
         "deferred_count": len(deferred),
         "total": len(assignments)
     }
+
+
+# =============================================================================
+# EMBEDDING FUNCTIONS (Semantic Matching)
+# =============================================================================
+
+def save_question_embedding(question_id: int, embedding_bytes: bytes, model_name: str) -> bool:
+    """
+    Save embedding for a question.
+
+    Args:
+        question_id: The question ID
+        embedding_bytes: Embedding as bytes (use embedding_to_bytes())
+        model_name: Name of the model used to generate the embedding
+
+    Returns:
+        True if saved successfully
+    """
+    with get_session() as session:
+        question = session.query(Question).filter(Question.id == question_id).first()
+        if not question:
+            return False
+
+        question.intent_embedding = embedding_bytes
+        question.intent_embedding_model = model_name
+        session.add(question)
+        session.commit()
+        return True
+
+
+def save_section_embedding(section_id: int, embedding_bytes: bytes, model_name: str) -> bool:
+    """
+    Save embedding for a manual section.
+
+    Args:
+        section_id: The section ID
+        embedding_bytes: Embedding as bytes (use embedding_to_bytes())
+        model_name: Name of the model used to generate the embedding
+
+    Returns:
+        True if saved successfully
+    """
+    with get_session() as session:
+        section = session.query(ManualSection).filter(ManualSection.id == section_id).first()
+        if not section:
+            return False
+
+        section.content_embedding = embedding_bytes
+        section.content_embedding_model = model_name
+        session.add(section)
+        session.commit()
+        return True
+
+
+def get_questions_for_embedding(audit_id: str, model_name: str = None) -> list:
+    """
+    Get questions that need embeddings generated.
+
+    Args:
+        audit_id: The audit ID
+        model_name: If provided, only return questions without embeddings for this model
+
+    Returns:
+        List of question dictionaries with id, qid, and text fields
+    """
+    with get_session() as session:
+        query = session.query(Question).filter(Question.audit_id == audit_id)
+
+        if model_name:
+            # Only questions without embeddings or with different model
+            query = query.filter(
+                (Question.intent_embedding == None) |
+                (Question.intent_embedding_model != model_name)
+            )
+
+        questions = query.all()
+        return [{
+            "id": q.id,
+            "qid": q.qid,
+            "question_text_full": q.question_text_full,
+            "data_collection_guidance": q.data_collection_guidance,
+            "reference_cfr_list": q.reference_cfr_list or [],
+            "reference_faa_guidance_list": q.reference_faa_guidance_list or [],
+            "notes": q.notes or [],
+            "has_embedding": q.intent_embedding is not None
+        } for q in questions]
+
+
+def get_sections_for_embedding(manual_id: str, model_name: str = None) -> list:
+    """
+    Get manual sections that need embeddings generated.
+
+    Args:
+        manual_id: The manual ID
+        model_name: If provided, only return sections without embeddings for this model
+
+    Returns:
+        List of section dictionaries
+    """
+    with get_session() as session:
+        query = session.query(ManualSection).filter(ManualSection.manual_id == manual_id)
+
+        if model_name:
+            query = query.filter(
+                (ManualSection.content_embedding == None) |
+                (ManualSection.content_embedding_model != model_name)
+            )
+
+        sections = query.all()
+        return [{
+            "id": s.id,
+            "section_number": s.section_number,
+            "section_title": s.section_title,
+            "section_text": s.section_text,
+            "cfr_citations": s.cfr_citations or [],
+            "has_embedding": s.content_embedding is not None
+        } for s in sections]
+
+
+def get_question_with_embedding(question_id: int) -> dict:
+    """
+    Get a question with its embedding.
+
+    Returns:
+        Dictionary with question data and embedding bytes, or None
+    """
+    with get_session() as session:
+        question = session.query(Question).filter(Question.id == question_id).first()
+        if not question:
+            return None
+
+        return {
+            "id": question.id,
+            "qid": question.qid,
+            "question_text_full": question.question_text_full,
+            "data_collection_guidance": question.data_collection_guidance,
+            "reference_cfr_list": question.reference_cfr_list or [],
+            "reference_faa_guidance_list": question.reference_faa_guidance_list or [],
+            "notes": question.notes or [],
+            "intent_embedding": question.intent_embedding,
+            "intent_embedding_model": question.intent_embedding_model
+        }
+
+
+def get_sections_with_embeddings(manual_id: str) -> list:
+    """
+    Get all sections for a manual with their embeddings.
+
+    Args:
+        manual_id: The manual ID
+
+    Returns:
+        List of section dictionaries including embedding bytes
+    """
+    with get_session() as session:
+        sections = (
+            session.query(ManualSection)
+            .filter(ManualSection.manual_id == manual_id)
+            .filter(ManualSection.content_embedding != None)
+            .all()
+        )
+
+        return [{
+            "id": s.id,
+            "section_number": s.section_number,
+            "section_title": s.section_title,
+            "section_text": s.section_text,
+            "page_number": s.page_number,
+            "cfr_citations": s.cfr_citations or [],
+            "content_embedding": s.content_embedding,
+            "content_embedding_model": s.content_embedding_model
+        } for s in sections]
+
+
+def clear_embeddings_for_audit(audit_id: str) -> int:
+    """
+    Clear all question embeddings for an audit (to regenerate).
+
+    Returns:
+        Number of questions updated
+    """
+    with get_session() as session:
+        count = session.query(Question).filter(
+            Question.audit_id == audit_id
+        ).update({
+            Question.intent_embedding: None,
+            Question.intent_embedding_model: None
+        }, synchronize_session=False)
+        session.commit()
+        return count
+
+
+def clear_embeddings_for_manual(manual_id: str) -> int:
+    """
+    Clear all section embeddings for a manual (to regenerate).
+
+    Returns:
+        Number of sections updated
+    """
+    with get_session() as session:
+        count = session.query(ManualSection).filter(
+            ManualSection.manual_id == manual_id
+        ).update({
+            ManualSection.content_embedding: None,
+            ManualSection.content_embedding_model: None
+        }, synchronize_session=False)
+        session.commit()
+        return count
+
+
+def get_embedding_stats(audit_id: str = None) -> dict:
+    """
+    Get embedding generation statistics.
+
+    Args:
+        audit_id: Optional audit ID to filter questions
+
+    Returns:
+        Dictionary with embedding statistics
+    """
+    with get_session() as session:
+        # Question stats
+        q_query = session.query(Question)
+        if audit_id:
+            q_query = q_query.filter(Question.audit_id == audit_id)
+
+        total_questions = q_query.count()
+        questions_with_embeddings = q_query.filter(
+            Question.intent_embedding != None
+        ).count()
+
+        # Section stats (all manuals)
+        total_sections = session.query(ManualSection).count()
+        sections_with_embeddings = session.query(ManualSection).filter(
+            ManualSection.content_embedding != None
+        ).count()
+
+        return {
+            "questions": {
+                "total": total_questions,
+                "with_embeddings": questions_with_embeddings,
+                "without_embeddings": total_questions - questions_with_embeddings
+            },
+            "sections": {
+                "total": total_sections,
+                "with_embeddings": sections_with_embeddings,
+                "without_embeddings": total_sections - sections_with_embeddings
+            }
+        }
 
 
 # Initialize database on import

@@ -1026,6 +1026,10 @@ def get_deferred_items(audit_id):
 def get_audit_map(audit_id):
     """
     Generate the Mapping Audit Package (MAP) for in-scope questions.
+
+    Query parameters:
+    - debug: Include debug info (scores, signals)
+    - semantic: Use semantic matching (default: true if embeddings available)
     """
     import map_builder
 
@@ -1038,7 +1042,13 @@ def get_audit_map(audit_id):
         return jsonify({"error": "No ownership assignments found. Run POST /api/audits/{id}/ownership first."}), 400
 
     debug_flag = request.args.get('debug', '').lower() in ('1', 'true', 'yes')
-    payload = map_builder.generate_map_payload(audit_id, include_debug=debug_flag)
+    semantic_flag = request.args.get('semantic', 'true').lower() in ('1', 'true', 'yes')
+
+    payload = map_builder.generate_map_payload(
+        audit_id,
+        include_debug=debug_flag,
+        use_semantic=semantic_flag
+    )
     return jsonify(payload), 200
 
 
@@ -1139,6 +1149,102 @@ def export_audit_pdf(audit_id):
             "error": "Failed to generate PDF",
             "message": str(e)
         }), 500
+
+
+# =============================================================================
+# SEMANTIC EMBEDDING ENDPOINTS
+# =============================================================================
+
+@app.route('/api/audits/<audit_id>/generate-embeddings', methods=['POST'])
+def generate_embeddings(audit_id):
+    """
+    Pre-generate embeddings for questions and manual sections.
+
+    This endpoint computes and caches semantic embeddings for:
+    - All questions in the audit
+    - All sections in the pinned manuals
+
+    Embeddings are cached in the database, so subsequent calls are fast.
+    """
+    import manual_mapper
+    from config import EMBEDDING_ENABLED
+
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Audit not found"}), 404
+
+    if not EMBEDDING_ENABLED:
+        return jsonify({
+            "error": "Semantic embedding is disabled",
+            "message": "Set EMBEDDING_ENABLED=true in environment to enable"
+        }), 400
+
+    try:
+        result = manual_mapper.generate_embeddings_for_audit(audit_id)
+        return jsonify({
+            "status": "success",
+            "audit_id": audit_id,
+            **result
+        }), 200
+    except ImportError as e:
+        return jsonify({
+            "error": "sentence-transformers not installed",
+            "message": "Run: pip install sentence-transformers",
+            "details": str(e)
+        }), 500
+    except Exception as e:
+        logger.error(f"Error generating embeddings for audit {audit_id}: {e}", exc_info=True)
+        return jsonify({
+            "error": "Failed to generate embeddings",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/audits/<audit_id>/embeddings/status', methods=['GET'])
+def get_embedding_status(audit_id):
+    """
+    Get embedding generation status for an audit.
+    """
+    from config import EMBEDDING_ENABLED, EMBEDDING_MODEL
+
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Audit not found"}), 404
+
+    stats = db.get_embedding_stats(audit_id)
+
+    return jsonify({
+        "audit_id": audit_id,
+        "embedding_enabled": EMBEDDING_ENABLED,
+        "embedding_model": EMBEDDING_MODEL,
+        "statistics": stats
+    }), 200
+
+
+@app.route('/api/config/embedding', methods=['GET'])
+def get_embedding_config():
+    """
+    Get current embedding configuration.
+    """
+    from config import EMBEDDING_ENABLED, EMBEDDING_MODEL, SEMANTIC_WEIGHT
+
+    # Check if sentence-transformers is installed
+    try:
+        import sentence_transformers
+        st_installed = True
+        st_version = getattr(sentence_transformers, '__version__', 'unknown')
+    except ImportError:
+        st_installed = False
+        st_version = None
+
+    return jsonify({
+        "embedding_enabled": EMBEDDING_ENABLED,
+        "embedding_model": EMBEDDING_MODEL,
+        "semantic_weight": SEMANTIC_WEIGHT,
+        "sentence_transformers_installed": st_installed,
+        "sentence_transformers_version": st_version,
+        "statistics": db.get_embedding_stats()
+    }), 200
 
 
 if __name__ == '__main__':

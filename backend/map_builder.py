@@ -75,12 +75,21 @@ def _get_latest_manuals(session) -> List[Dict[str, Any]]:
     return [m.to_dict() for m in latest_by_type.values()]
 
 
-def build_map_rows(audit_id: str, include_debug: bool = False) -> Tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]], int]:
+def build_map_rows(
+    audit_id: str,
+    include_debug: bool = False,
+    use_semantic: bool = True
+) -> Tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]], int]:
     """
     Build MAP rows for an audit, filtered to in-scope functions.
 
+    Args:
+        audit_id: The audit ID
+        include_debug: Include debug info in output
+        use_semantic: Use semantic matching for manual suggestions
+
     Returns:
-        Tuple of (rows, in_scope_functions)
+        Tuple of (rows, in_scope_functions, manuals_used, not_applicable_count)
     """
     scope = db.get_audit_scope(audit_id)
     if scope and scope.get("in_scope_functions"):
@@ -130,7 +139,13 @@ def build_map_rows(audit_id: str, include_debug: bool = False) -> Tuple[List[Dic
                 ]
 
             if sections_by_type:
-                suggested_links = manual_mapper.suggest_manual_links(question, sections_by_type)
+                # Use semantic-enhanced matching if enabled
+                if use_semantic:
+                    suggested_links = manual_mapper.suggest_manual_links_enhanced(
+                        question, sections_by_type
+                    )
+                else:
+                    suggested_links = manual_mapper.suggest_manual_links(question, sections_by_type)
                 if suggested_links:
                     # Merge manual overrides with auto-suggestions, avoiding duplicates.
                     merged = list(manual_links)
@@ -169,7 +184,7 @@ def build_map_rows(audit_id: str, include_debug: bool = False) -> Tuple[List[Dic
                 for link in manual_links:
                     if (link.get("source") or "").lower() != "auto":
                         continue
-                    debug_links.append({
+                    debug_info = {
                         "manual_type": link.get("manual_type") or link.get("manual"),
                         "section": link.get("section") or link.get("section_number") or link.get("reference"),
                         "section_title": link.get("section_title"),
@@ -177,7 +192,15 @@ def build_map_rows(audit_id: str, include_debug: bool = False) -> Tuple[List[Dic
                         "paragraph": link.get("paragraph"),
                         "score": link.get("score"),
                         "match_signals": link.get("match_signals")
-                    })
+                    }
+                    # Include semantic scores if available
+                    if "deterministic_score" in link:
+                        debug_info["deterministic_score"] = link.get("deterministic_score")
+                    if "semantic_score" in link:
+                        debug_info["semantic_score"] = link.get("semantic_score")
+                    if "semantic_similarity" in link:
+                        debug_info["semantic_similarity"] = link.get("semantic_similarity")
+                    debug_links.append(debug_info)
                 row["auto_suggestions_debug"] = debug_links
             rows.append(row)
         manuals_used = _get_latest_manuals(session)
@@ -185,11 +208,16 @@ def build_map_rows(audit_id: str, include_debug: bool = False) -> Tuple[List[Dic
     return rows, in_scope_functions, manuals_used, not_applicable_count
 
 
-def generate_map_payload(audit_id: str, include_debug: bool = False) -> Dict[str, Any]:
+def generate_map_payload(
+    audit_id: str,
+    include_debug: bool = False,
+    use_semantic: bool = True
+) -> Dict[str, Any]:
     """Generate MAP response payload for the API."""
     rows, in_scope_functions, manuals_used, not_applicable_count = build_map_rows(
         audit_id,
-        include_debug=include_debug
+        include_debug=include_debug,
+        use_semantic=use_semantic
     )
     return {
         "audit_id": audit_id,

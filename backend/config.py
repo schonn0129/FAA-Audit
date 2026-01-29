@@ -18,3 +18,8 @@ ALLOWED_EXTENSIONS = {'pdf'}
 
 # Ensure upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Embedding configuration for semantic matching
+EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', 'all-MiniLM-L6-v2')
+EMBEDDING_ENABLED = os.getenv('EMBEDDING_ENABLED', 'true').lower() == 'true'
+SEMANTIC_WEIGHT = float(os.getenv('SEMANTIC_WEIGHT', '0.5'))  # Balance between deterministic and semantic scoring

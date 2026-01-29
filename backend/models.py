@@ -3,7 +3,7 @@ SQLAlchemy models for the FAA Audit application.
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey, Boolean, Float
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey, Boolean, Float, LargeBinary
 from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
@@ -106,6 +106,10 @@ class Question(Base):
     pdf_page_number = Column(Integer, nullable=True)
     pdf_element_block_id = Column(String(100), nullable=True)
     notes = Column(JSON, default=list)  # List of notes
+
+    # Embedding cache for semantic matching
+    intent_embedding = Column(LargeBinary, nullable=True)  # numpy array as bytes
+    intent_embedding_model = Column(String(100), nullable=True)  # model used to generate
 
     # Relationships
     audit = relationship("Audit", back_populates="questions")
@@ -270,6 +274,10 @@ class ManualSection(Base):
 
     # Suggested owner based on content
     suggested_owner = Column(String(50), nullable=True)
+
+    # Embedding cache for semantic matching
+    content_embedding = Column(LargeBinary, nullable=True)  # numpy array as bytes
+    content_embedding_model = Column(String(100), nullable=True)  # model used to generate
 
     # Relationships
     manual = relationship("Manual", back_populates="sections")

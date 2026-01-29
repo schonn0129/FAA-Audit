@@ -1,16 +1,23 @@
 """
 Manual matching engine for MAP references.
 
-Deterministically matches DCT questions to manual sections using
-keyword overlap and CFR citations.
+Matches DCT questions to manual sections using:
+1. Deterministic keyword overlap and CFR citations
+2. Optional semantic similarity via embeddings (sentence-transformers)
 """
 
+import logging
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
 
 from models import Audit, Manual, ManualSection, Question
 import database as db
 import reference_context
+from config import EMBEDDING_ENABLED, EMBEDDING_MODEL, SEMANTIC_WEIGHT
+
+logger = logging.getLogger(__name__)
 
 STOPWORDS = {
     "the", "and", "for", "with", "that", "this", "from", "into", "when", "then",
@@ -606,3 +613,295 @@ def suggest_manual_links_for_audit(audit_id: str) -> Dict[str, List[Dict[str, An
                 links[question.qid] = suggestions
 
     return links
+
+
+# =============================================================================
+# SEMANTIC MATCHING (Enhanced with Embeddings)
+# =============================================================================
+
+def _get_embedding_service():
+    """Lazy-load the embedding service to avoid startup delay."""
+    try:
+        from embedding_service import get_embedding_service
+        return get_embedding_service(EMBEDDING_MODEL)
+    except ImportError as e:
+        logger.warning(f"Embedding service not available: {e}")
+        return None
+
+
+def _compute_question_embedding(question: Question, embedding_service) -> Optional[np.ndarray]:
+    """Compute or retrieve cached embedding for a question."""
+    from embedding_service import build_question_intent_text, bytes_to_embedding, embedding_to_bytes
+
+    # Check cache
+    if question.intent_embedding and question.intent_embedding_model == EMBEDDING_MODEL:
+        return bytes_to_embedding(question.intent_embedding)
+
+    # Compute embedding
+    intent_text = build_question_intent_text(question)
+    embedding = embedding_service.embed_text(intent_text)
+
+    # Cache for later (don't commit here - caller should handle transaction)
+    question.intent_embedding = embedding_to_bytes(embedding)
+    question.intent_embedding_model = EMBEDDING_MODEL
+
+    return embedding
+
+
+def _compute_section_embedding(section: ManualSection, embedding_service) -> Optional[np.ndarray]:
+    """Compute or retrieve cached embedding for a manual section."""
+    from embedding_service import build_section_content_text, bytes_to_embedding, embedding_to_bytes
+
+    # Check cache
+    if section.content_embedding and section.content_embedding_model == EMBEDDING_MODEL:
+        return bytes_to_embedding(section.content_embedding)
+
+    # Compute embedding
+    content_text = build_section_content_text(section)
+    embedding = embedding_service.embed_text(content_text)
+
+    # Cache for later
+    section.content_embedding = embedding_to_bytes(embedding)
+    section.content_embedding_model = EMBEDDING_MODEL
+
+    return embedding
+
+
+def suggest_manual_links_enhanced(
+    question: Question,
+    sections_by_type: Dict[str, List[ManualSection]],
+    use_semantic: bool = True,
+    semantic_weight: float = None
+) -> List[Dict[str, Any]]:
+    """
+    Enhanced suggestion with optional semantic matching.
+
+    Combines deterministic scoring with semantic similarity:
+    - deterministic_score: keyword/CFR/phrase matching (existing)
+    - semantic_score: embedding similarity (0-1) scaled
+
+    Args:
+        question: The question to find matches for
+        sections_by_type: Manual sections grouped by type
+        use_semantic: Whether to use semantic matching (default True if available)
+        semantic_weight: Weight for semantic score (0-1), default from config
+
+    Returns:
+        List of suggestion dictionaries with combined scores
+    """
+    if semantic_weight is None:
+        semantic_weight = SEMANTIC_WEIGHT
+
+    # Check if semantic matching is available and enabled
+    embedding_service = None
+    if use_semantic and EMBEDDING_ENABLED:
+        embedding_service = _get_embedding_service()
+
+    if embedding_service is None:
+        # Fall back to deterministic only
+        return suggest_manual_links(question, sections_by_type)
+
+    # Get question embedding
+    try:
+        question_embedding = _compute_question_embedding(question, embedding_service)
+    except Exception as e:
+        logger.error(f"Failed to compute question embedding: {e}")
+        return suggest_manual_links(question, sections_by_type)
+
+    # Build question context for deterministic scoring
+    question_tokens, question_phrases = _build_question_context(question)
+    full_text = " ".join(filter(None, [
+        question.question_text_condensed,
+        question.question_text_full,
+        question.data_collection_guidance,
+        question.reference_raw,
+        " ".join(question.reference_other_list or []),
+        " ".join(question.reference_faa_guidance_list or []),
+        _clean_notes(question.notes or [])
+    ])).lower()
+    allow_prohibition = _question_has_prohibition_intent(question_tokens, full_text)
+    if not allow_prohibition:
+        question_phrases = [p for p in question_phrases if p not in PROHIBITION_PHRASES]
+    question_cfrs = set(question.reference_cfr_list or [])
+
+    # Score all sections
+    all_scored: List[Dict[str, Any]] = []
+
+    for manual_type, sections in sections_by_type.items():
+        for section in sections:
+            section_title = section.section_title or ""
+            segments = _split_section_into_segments(section)
+
+            if not segments:
+                continue
+
+            # Compute section embedding (once per section, not per segment)
+            try:
+                section_embedding = _compute_section_embedding(section, embedding_service)
+                semantic_similarity = embedding_service.similarity(question_embedding, section_embedding)
+            except Exception as e:
+                logger.warning(f"Failed to compute section embedding: {e}")
+                semantic_similarity = 0.0
+
+            for seg in segments:
+                # Deterministic score
+                det_score, signals = _score_section_segment(
+                    question_tokens,
+                    question_cfrs,
+                    question_phrases,
+                    section_title,
+                    seg.get("text", ""),
+                    section,
+                    allow_prohibition=allow_prohibition
+                )
+
+                # Skip very low deterministic scores unless semantic is high
+                if det_score < 1.0 and semantic_similarity < 0.3:
+                    continue
+
+                # Combined scoring
+                # Scale semantic similarity to match deterministic range (roughly 0-20)
+                semantic_score = semantic_similarity * 10.0
+
+                # Weighted combination
+                det_weight = 1.0 - semantic_weight
+                final_score = (det_score * det_weight) + (semantic_score * semantic_weight)
+
+                # Build section display
+                section_number = section.section_number or ""
+                section_display = section_number or section.section_title or ""
+                paragraph_label = seg.get("label")
+                if paragraph_label and section_number:
+                    section_display = f"{section_number}({paragraph_label})"
+
+                all_scored.append({
+                    "manual_id": section.manual_id,
+                    "manual_type": manual_type,
+                    "section": section_display,
+                    "section_number": section.section_number,
+                    "section_title": section.section_title,
+                    "page_number": section.page_number,
+                    "paragraph": paragraph_label,
+                    "score": round(final_score, 2),
+                    "deterministic_score": round(det_score, 2),
+                    "semantic_score": round(semantic_score, 2),
+                    "semantic_similarity": round(semantic_similarity, 3),
+                    "match_signals": signals,
+                    "source": "auto"
+                })
+
+    if not all_scored:
+        return []
+
+    # Sort by final score
+    all_scored.sort(key=lambda x: (-x["score"], x.get("page_number") or 0))
+
+    # Limit to top N per manual type
+    by_type: Dict[str, List[Dict[str, Any]]] = {}
+    for item in all_scored:
+        mtype = item["manual_type"]
+        if mtype not in by_type:
+            by_type[mtype] = []
+        if len(by_type[mtype]) < MAX_SUGGESTIONS_PER_MANUAL:
+            by_type[mtype].append(item)
+
+    # Flatten back to list
+    suggestions = []
+    for items in by_type.values():
+        suggestions.extend(items)
+
+    # Final sort
+    suggestions.sort(key=lambda x: (-x["score"], x.get("page_number") or 0))
+
+    return suggestions
+
+
+def suggest_manual_links_for_audit_enhanced(
+    audit_id: str,
+    use_semantic: bool = True
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Suggest manual links for all questions in an audit with semantic matching.
+    """
+    links: Dict[str, List[Dict[str, Any]]] = {}
+
+    with db.get_session() as session:
+        sections_by_type = load_latest_manual_sections(session, audit_id=audit_id)
+        if not sections_by_type:
+            return links
+
+        questions = session.query(Question).filter(Question.audit_id == audit_id).all()
+
+        for question in questions:
+            if use_semantic and EMBEDDING_ENABLED:
+                suggestions = suggest_manual_links_enhanced(question, sections_by_type)
+            else:
+                suggestions = suggest_manual_links(question, sections_by_type)
+
+            if suggestions:
+                links[question.qid] = suggestions
+
+        # Commit any cached embeddings
+        session.commit()
+
+    return links
+
+
+def generate_embeddings_for_audit(audit_id: str) -> Dict[str, int]:
+    """
+    Pre-generate embeddings for all questions in an audit and their linked manuals.
+
+    Args:
+        audit_id: The audit ID
+
+    Returns:
+        Dictionary with counts of embeddings generated
+    """
+    from embedding_service import (
+        build_question_intent_text, build_section_content_text,
+        embedding_to_bytes, get_embedding_service
+    )
+
+    if not EMBEDDING_ENABLED:
+        return {"error": "Embedding is disabled in configuration"}
+
+    embedding_service = get_embedding_service(EMBEDDING_MODEL)
+
+    questions_embedded = 0
+    sections_embedded = 0
+
+    with db.get_session() as session:
+        # Generate question embeddings
+        questions = session.query(Question).filter(Question.audit_id == audit_id).all()
+
+        for question in questions:
+            if question.intent_embedding and question.intent_embedding_model == EMBEDDING_MODEL:
+                continue  # Already has embedding
+
+            intent_text = build_question_intent_text(question)
+            embedding = embedding_service.embed_text(intent_text)
+            question.intent_embedding = embedding_to_bytes(embedding)
+            question.intent_embedding_model = EMBEDDING_MODEL
+            questions_embedded += 1
+
+        # Generate section embeddings for pinned manuals
+        sections_by_type = load_latest_manual_sections(session, audit_id=audit_id)
+
+        for manual_type, sections in sections_by_type.items():
+            for section in sections:
+                if section.content_embedding and section.content_embedding_model == EMBEDDING_MODEL:
+                    continue  # Already has embedding
+
+                content_text = build_section_content_text(section)
+                embedding = embedding_service.embed_text(content_text)
+                section.content_embedding = embedding_to_bytes(embedding)
+                section.content_embedding_model = EMBEDDING_MODEL
+                sections_embedded += 1
+
+        session.commit()
+
+    return {
+        "questions_embedded": questions_embedded,
+        "sections_embedded": sections_embedded,
+        "model": EMBEDDING_MODEL
+    }

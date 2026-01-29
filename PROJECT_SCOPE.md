@@ -202,12 +202,56 @@ This is a **deterministic compliance engine**, not a generative AI task. Every d
 
 ---
 
-## Phase 7: Mapping Memory (Reference Learning) 🧠 PLANNED
+## Phase 7: Semantic Intent Analysis for Auto-Mapping ✅ COMPLETE
+
+**Objective:** Add semantic understanding to determine DCT question intent and match manual sections that meet that intent, improving auto-mapping accuracy.
+
+**Implementation Status:** Complete
+
+**Approach:** Local embeddings using sentence-transformers (zero API cost)
+- Converts questions and manual sections into semantic vectors
+- Finds sections that are semantically similar to question intent
+- Combines with existing deterministic scoring for best results
+
+**Key Components:**
+- `backend/embedding_service.py`: Embedding model wrapper (sentence-transformers)
+- `backend/manual_mapper.py`: Enhanced with `suggest_manual_links_enhanced()`
+- Database caching for embeddings (avoid recomputation)
+
+**Scoring Formula:**
+```
+final_score = (deterministic_score * 0.5) + (semantic_score * 0.5)
+```
+
+**API Endpoints:**
+- `POST /api/audits/{id}/generate-embeddings` - Pre-compute embeddings
+- `GET /api/audits/{id}/embeddings/status` - Check embedding status
+- `GET /api/config/embedding` - View embedding configuration
+- `GET /api/audits/{id}/map?semantic=true` - Use semantic matching (default)
+
+**Benefits:**
+- "AD tracking" matches "airworthiness directive management" semantically
+- Prioritizes sections that address the question's actual compliance need
+- Zero cost (runs locally, no API calls)
+- Fast (~5ms per embedding, cached after first run)
+
+**Deliverables:**
+- [x] Embedding service with sentence-transformers
+- [x] Question intent text builder
+- [x] Manual section content text builder
+- [x] Embedding cache in database
+- [x] Enhanced manual mapping with semantic scoring
+- [x] API endpoints for embedding management
+- [x] Configuration via environment variables
+
+---
+
+## Phase 8: Mapping Memory (Reference Learning) 🧠 PLANNED
 
 **Objective:** When an auditor finalizes an element, persist the approved manual references and apply them automatically on the next audit of the same DCT edition/version and element.
 
 **Key Behavior:**
-- Auditor marks an element as “finalized”
+- Auditor marks an element as "finalized"
 - System saves manual references as the preferred mapping for that element
 - On future audits with the same DCT edition/version, the system pre-populates those references
 - Manual overrides still allowed; auditors can update mappings and re-save
@@ -220,7 +264,7 @@ This is a **deterministic compliance engine**, not a generative AI task. Every d
 
 ---
 
-## Phase 8: Manual Structure & Compliance Gap Analysis 🧾 PLANNED
+## Phase 9: Manual Structure & Compliance Gap Analysis 🧾 PLANNED
 
 **Objective:** Analyze the GMM and the first two chapters of the AIP to verify required structure, detect missing content, and flag policy/procedure conflicts tied to DCT/8900.1 guidance expectations.
 
@@ -283,6 +327,7 @@ A quality manager can hand this package to a PMI and say:
 - Phase 4: MAP generation with manual cross-references
 - Phase 5: Dashboard visualizations (pie chart, bar chart, risk heatmap)
 - Phase 6: PDF compliance package generation (6-section structure)
+- Phase 7: Semantic intent analysis for enhanced auto-mapping
 - Database layer for audit storage
 - React frontend with full navigation
 
@@ -290,8 +335,8 @@ A quality manager can hand this package to a PMI and say:
 - None currently
 
 ### ❌ Not Started
-- Phase 7: Mapping Memory (Reference Learning)
-- Phase 8: Manual Structure & Compliance Gap Analysis
+- Phase 8: Mapping Memory (Reference Learning)
+- Phase 9: Manual Structure & Compliance Gap Analysis
 
 ---
 
@@ -342,8 +387,10 @@ FAA-Audit/
 │   ├── map_builder.py         # ✅ Phase 4: MAP construction
 │   ├── export_map.py          # ✅ Phase 4: MAP export
 │   ├── manual_parser.py       # ✅ Manual parsing
-│   ├── manual_mapper.py       # ✅ Manual cross-reference
-│   ├── pdf_export.py          # ❌ Phase 6: PDF assembly
+│   ├── manual_mapper.py       # ✅ Manual cross-reference + semantic matching
+│   ├── embedding_service.py   # ✅ Phase 7: Semantic embeddings
+│   ├── pdf_generator.py       # ✅ Phase 6: PDF assembly
+│   ├── config.py              # Configuration settings
 │   └── requirements.txt
 ├── frontend/
 │   └── src/
@@ -380,8 +427,8 @@ FAA-Audit/
 
 ## Version Control
 
-- **Document Version:** 1.1
-- **Last Updated:** 2026-01-26
+- **Document Version:** 1.2
+- **Last Updated:** 2026-01-28
 - **DCT Version:** ED 4.2.1 (Version 29) — 44 questions (note: other DCTs will have different question counts)
 - **AIP Version:** TBD (specify when implementing)
 - **GMM Version:** TBD (specify when implementing)
