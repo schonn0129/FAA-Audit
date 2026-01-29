@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: faa-audit-backend
+    ports:
+      - "5000:5000"
+    volumes:
+      # Persist uploaded PDFs
+      - ./backend/uploads:/app/uploads
+      # Persist parsed manuals
+      - ./backend/manuals:/app/manuals
+      # Persist SQLite database
+      - ./backend/data:/app/data
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - EMBEDDING_ENABLED=true
+      - DATABASE_PATH=/app/data/faa_audit.db
+      - UPLOAD_FOLDER=/app/uploads
+      - MANUALS_FOLDER=/app/manuals
+    restart: unless-stopped
+
+  # Optional: Frontend service (uncomment if you want to containerize frontend too)
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: faa-audit-frontend
+  #   ports:
+  #     - "5173:5173"
+  #   depends_on:
+  #     - backend
+  #   environment:
+  #     - VITE_API_URL=http://localhost:5000
+
+volumes:
+  backend-uploads:
+  backend-manuals:
+  backend-data:

@@ -1,0 +1,29 @@
+# Virtual environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Database (will be mounted as volume)
+*.db
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+test_*.py
+*_test.py
+
+# Documentation
+*.md
+
+# Existing uploads/manuals (mounted as volumes)
+uploads/*
+manuals/*
+!uploads/.gitkeep
+!manuals/.gitkeep
