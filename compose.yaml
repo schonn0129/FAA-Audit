@@ -1,0 +1,50 @@
+# FAA Audit Application - Synology NAS Deployment
+#
+# This file should be placed at: /volume1/audit-app/compose.yaml
+# The app code should be at:     /volume1/audit-app/app/
+#
+# Container Manager will build both images on first run.
+# First build takes 5-10 minutes (downloads PyTorch for embeddings).
+
+version: "3.9"
+
+services:
+  # Python Flask Backend API
+  backend:
+    build:
+      context: ./app/backend
+      dockerfile: Dockerfile
+    container_name: faa-audit-backend
+    restart: unless-stopped
+    volumes:
+      # Persistent data storage
+      - ./data/uploads:/app/uploads
+      - ./data/manuals:/app/manuals
+      - ./data/db:/app/data
+    environment:
+      - FLASK_ENV=production
+      - EMBEDDING_ENABLED=true
+      - DATABASE_PATH=/app/data/faa_audit.db
+      - UPLOAD_FOLDER=/app/uploads
+      - MANUALS_FOLDER=/app/manuals
+    networks:
+      - faa-network
+    # Backend is NOT exposed externally - only accessible via frontend proxy
+
+  # React Frontend served by nginx
+  frontend:
+    build:
+      context: ./app/frontend
+      dockerfile: Dockerfile
+    container_name: faa-audit-frontend
+    restart: unless-stopped
+    ports:
+      - "8888:80"
+    depends_on:
+      - backend
+    networks:
+      - faa-network
+
+networks:
+  faa-network:
+    driver: bridge
