@@ -147,3 +147,75 @@ http://localhost:5000/api/audits/<audit_id>/map?debug=1
 ```
 
 Each row includes `auto_suggestions_debug` with scores and keyword/phrase hits.
+
+---
+
+## Synology NAS Deployment Issues
+
+### 504 Gateway Timeout on PDF Upload
+
+**Symptom:** Uploading a PDF (DCT or GMM) fails with "504 Gateway Timeout" or "Upload failed" error.
+
+**Cause:** The nginx proxy timeout is shorter than the time needed for the backend to process the PDF. This is common on Synology NAS devices (like DS220+) because:
+- The Celeron CPU is slower than desktop/laptop CPUs
+- Embedding generation (sentence-transformers/PyTorch) is CPU-intensive
+- Large PDFs take longer to parse and process
+
+**Fix:** Increase the nginx proxy timeout in `frontend/nginx.conf`:
+
+```nginx
+location /api {
+    # ... other settings ...
+
+    # Increase these values (in seconds)
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 600s;    # 10 minutes
+    proxy_read_timeout 600s;    # 10 minutes
+}
+```
+
+After editing, rebuild the frontend container:
+1. In Container Manager, stop the project
+2. Delete the `faa-audit-frontend` image (under Images)
+3. Rebuild and start the project
+
+If 10 minutes isn't enough for very large PDFs, increase to `1800s` (30 minutes).
+
+### Container Build Uses Cached Layers
+
+**Symptom:** Changes to `nginx.conf` or other files don't take effect after rebuild.
+
+**Cause:** Docker caches build layers. If the file hasn't changed in a way Docker detects, it uses the cached version.
+
+**Fix:** Force a clean rebuild:
+1. Stop the project in Container Manager
+2. Go to **Image** and delete both `faa-audit-backend` and `faa-audit-frontend` images
+3. Recreate the project from scratch
+
+### Data Folder Permission Issues
+
+**Symptom:** "Bind mount failed" error when creating the project.
+
+**Cause:** The data directories don't exist on the NAS.
+
+**Fix:** Create the required folders in File Station:
+```
+/volume1/audit-app/data/
+/volume1/audit-app/data/uploads/
+/volume1/audit-app/data/manuals/
+/volume1/audit-app/data/db/
+```
+
+### Container Won't Start - Port Already in Use
+
+**Symptom:** Frontend container fails to start with port conflict error.
+
+**Cause:** Port 8888 is already used by another service.
+
+**Fix:** Change the port in `compose.yaml`:
+```yaml
+ports:
+  - "9999:80"  # Change 8888 to another port
+```
+
+Then access the app at `http://your-nas-ip:9999` instead.
