@@ -219,3 +219,62 @@ ports:
 ```
 
 Then access the app at `http://your-nas-ip:9999` instead.
+
+---
+
+## MAP Generation Errors
+
+### 500 Internal Server Error on /api/audits/<id>/map
+
+**Symptom:** Clicking to view the MAP or accessing the map endpoint returns a 500 error.
+
+**Possible Causes:**
+1. No manuals uploaded (GMM/AIP required for mapping)
+2. Embedding service failed to initialize (sentence-transformers not installed)
+3. Database schema mismatch (missing `pinned_manual_ids` column)
+4. Audit record doesn't exist or has no ownership assignments
+
+**Diagnosis:**
+Check the backend logs for detailed error messages. The MAP endpoint now logs:
+- `Building MAP rows for audit <id>` - Start of generation
+- `Loaded manual sections: ['AIP', 'GMM']` - Which manuals are available
+- `Failed to load manual sections: <error>` - If manual loading fails
+
+**Fix by cause:**
+
+1. **No manuals uploaded:**
+   ```bash
+   # Check if manuals exist
+   curl http://localhost:5000/api/manuals
+   ```
+   Upload GMM and/or AIP manuals before generating MAP.
+
+2. **Embedding service not available:**
+   ```bash
+   # Install sentence-transformers
+   pip install sentence-transformers
+   ```
+   Or disable semantic matching: `/api/audits/<id>/map?semantic=false`
+
+3. **Database schema issue:**
+   ```bash
+   # The backend auto-migrates on startup, but you can force it:
+   # Delete data/faa_audit.db and restart (WARNING: loses all data)
+   ```
+
+4. **Missing ownership assignments:**
+   Run ownership assignment first:
+   ```bash
+   curl -X POST http://localhost:5000/api/audits/<id>/ownership
+   ```
+
+### 404 Error on /api/audits/<id>
+
+**Symptom:** Repeated 404 errors in browser console for audit endpoints.
+
+**Cause:** The frontend is holding a stale audit ID that no longer exists in the database.
+
+**Fix:**
+1. Refresh the browser page (hard refresh: Cmd+Shift+R or Ctrl+Shift+R)
+2. Clear browser local storage for the site
+3. Navigate back to the audit list and select a valid audit

@@ -5,6 +5,7 @@ Generates deterministic MAP rows from DCT questions, ownership assignments,
 and audit scope configuration.
 """
 
+import logging
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
@@ -12,6 +13,8 @@ import database as db
 from models import Question, OwnershipAssignment, Manual, QuestionApplicability
 import manual_mapper
 from scoping import VALID_FUNCTIONS
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_manual_refs(links: List[Dict[str, Any]], manual_type: str) -> str:
@@ -91,23 +94,40 @@ def build_map_rows(
     Returns:
         Tuple of (rows, in_scope_functions, manuals_used, not_applicable_count)
     """
-    scope = db.get_audit_scope(audit_id)
-    if scope and scope.get("in_scope_functions"):
-        in_scope_functions = scope.get("in_scope_functions", [])
-    else:
-        in_scope_functions = VALID_FUNCTIONS
+    logger.info(f"Building MAP rows for audit {audit_id} (semantic={use_semantic})")
+
+    try:
+        scope = db.get_audit_scope(audit_id)
+        if scope and scope.get("in_scope_functions"):
+            in_scope_functions = scope.get("in_scope_functions", [])
+        else:
+            in_scope_functions = VALID_FUNCTIONS
+        logger.debug(f"In-scope functions: {in_scope_functions}")
+    except Exception as e:
+        logger.error(f"Failed to get audit scope: {e}", exc_info=True)
+        raise
 
     with db.get_session() as session:
-        query = (
-            session.query(Question, OwnershipAssignment, QuestionApplicability)
-            .join(OwnershipAssignment, OwnershipAssignment.question_id == Question.id)
-            .outerjoin(QuestionApplicability, QuestionApplicability.question_id == Question.id)
-            .filter(Question.audit_id == audit_id)
-            .filter(OwnershipAssignment.primary_function.in_(in_scope_functions))
-            .order_by(Question.element_id, Question.question_number, Question.qid)
-        )
+        try:
+            query = (
+                session.query(Question, OwnershipAssignment, QuestionApplicability)
+                .join(OwnershipAssignment, OwnershipAssignment.question_id == Question.id)
+                .outerjoin(QuestionApplicability, QuestionApplicability.question_id == Question.id)
+                .filter(Question.audit_id == audit_id)
+                .filter(OwnershipAssignment.primary_function.in_(in_scope_functions))
+                .order_by(Question.element_id, Question.question_number, Question.qid)
+            )
+            logger.debug(f"Query built successfully for audit {audit_id}")
+        except Exception as e:
+            logger.error(f"Failed to build query: {e}", exc_info=True)
+            raise
 
-        sections_by_type = manual_mapper.load_latest_manual_sections(session, audit_id=audit_id)
+        try:
+            sections_by_type = manual_mapper.load_latest_manual_sections(session, audit_id=audit_id)
+            logger.info(f"Loaded manual sections: {list(sections_by_type.keys()) if sections_by_type else 'None'}")
+        except Exception as e:
+            logger.error(f"Failed to load manual sections: {e}", exc_info=True)
+            raise
         rows: List[Dict[str, Any]] = []
         not_applicable_count = 0
         for question, assignment, applicability in query.all():

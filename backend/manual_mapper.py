@@ -542,40 +542,63 @@ def load_latest_manual_sections(session, audit_id: str = None) -> Dict[str, List
     If audit_id is provided, pin the manuals per type for that audit on first use
     to ensure repeatable mapping even after new manual uploads.
     """
-    manuals = (
-        session.query(Manual)
-        .order_by(Manual.upload_date.desc())
-        .all()
-    )
+    logger.debug(f"Loading manual sections for audit_id={audit_id}")
+
+    try:
+        manuals = (
+            session.query(Manual)
+            .order_by(Manual.upload_date.desc())
+            .all()
+        )
+        logger.debug(f"Found {len(manuals)} manuals in database")
+    except Exception as e:
+        logger.error(f"Failed to query manuals: {e}", exc_info=True)
+        raise
 
     latest_by_type: Dict[str, Manual] = {}
     for manual in manuals:
         if manual.manual_type not in latest_by_type:
             latest_by_type[manual.manual_type] = manual
 
+    logger.debug(f"Latest manuals by type: {list(latest_by_type.keys())}")
+
     pinned_ids: Dict[str, str] = {}
     if audit_id:
-        audit = session.query(Audit).filter(Audit.id == audit_id).first()
-        if audit:
-            pinned_ids = audit.pinned_manual_ids or {}
-            if not pinned_ids:
-                pinned_ids = {mtype: manual.id for mtype, manual in latest_by_type.items()}
-                audit.pinned_manual_ids = pinned_ids
-                session.add(audit)
-                session.flush()
+        try:
+            audit = session.query(Audit).filter(Audit.id == audit_id).first()
+            if audit:
+                pinned_ids = audit.pinned_manual_ids or {}
+                logger.debug(f"Existing pinned_manual_ids: {pinned_ids}")
+                if not pinned_ids and latest_by_type:
+                    pinned_ids = {mtype: manual.id for mtype, manual in latest_by_type.items()}
+                    logger.info(f"Pinning manuals for audit {audit_id}: {pinned_ids}")
+                    audit.pinned_manual_ids = pinned_ids
+                    session.add(audit)
+                    session.flush()
+            else:
+                logger.warning(f"Audit {audit_id} not found when loading manual sections")
+        except Exception as e:
+            logger.error(f"Failed to pin manual IDs for audit {audit_id}: {e}", exc_info=True)
+            raise
 
     sections_by_type: Dict[str, List[ManualSection]] = {}
     for manual_type, manual in latest_by_type.items():
         manual_id = pinned_ids.get(manual_type, manual.id) if pinned_ids else manual.id
-        sections = (
-            session.query(ManualSection)
-            .filter(ManualSection.manual_id == manual_id)
-            .order_by(ManualSection.page_number.asc())
-            .all()
-        )
-        if sections:
-            sections_by_type[manual_type] = sections
+        try:
+            sections = (
+                session.query(ManualSection)
+                .filter(ManualSection.manual_id == manual_id)
+                .order_by(ManualSection.page_number.asc())
+                .all()
+            )
+            if sections:
+                sections_by_type[manual_type] = sections
+                logger.debug(f"Loaded {len(sections)} sections for {manual_type}")
+        except Exception as e:
+            logger.error(f"Failed to load sections for manual {manual_id}: {e}", exc_info=True)
+            raise
 
+    logger.info(f"Loaded sections for manual types: {list(sections_by_type.keys())}")
     return sections_by_type
 
 

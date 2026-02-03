@@ -1044,12 +1044,20 @@ def get_audit_map(audit_id):
     debug_flag = request.args.get('debug', '').lower() in ('1', 'true', 'yes')
     semantic_flag = request.args.get('semantic', 'true').lower() in ('1', 'true', 'yes')
 
-    payload = map_builder.generate_map_payload(
-        audit_id,
-        include_debug=debug_flag,
-        use_semantic=semantic_flag
-    )
-    return jsonify(payload), 200
+    try:
+        payload = map_builder.generate_map_payload(
+            audit_id,
+            include_debug=debug_flag,
+            use_semantic=semantic_flag
+        )
+        return jsonify(payload), 200
+    except Exception as e:
+        logger.error(f"Error generating MAP for audit {audit_id}: {e}", exc_info=True)
+        return jsonify({
+            "error": "Failed to generate MAP",
+            "message": str(e),
+            "audit_id": audit_id
+        }), 500
 
 
 @app.route('/api/audits/<audit_id>/map/export', methods=['GET'])
