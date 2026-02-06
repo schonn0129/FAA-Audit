@@ -21,8 +21,24 @@ from models import (
     QuestionApplicability
 )
 
-# Create engine
-engine = create_engine(DATABASE_URL, echo=False)
+# Create engine with SQLite optimizations for concurrent access
+# - timeout: wait up to 30 seconds for locks to clear
+# - check_same_thread: allow multi-threaded access (required for Flask)
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    connect_args={
+        "timeout": 30,
+        "check_same_thread": False
+    }
+)
+
+# Enable WAL mode for better concurrent read/write performance
+# WAL allows readers and writers to operate concurrently
+with engine.connect() as conn:
+    conn.execute(text("PRAGMA journal_mode=WAL"))
+    conn.execute(text("PRAGMA busy_timeout=30000"))
+    conn.commit()
 
 # Create session factory
 session_factory = sessionmaker(bind=engine)
