@@ -181,6 +181,25 @@ After editing, rebuild the frontend container:
 
 If 10 minutes isn't enough for very large PDFs, increase to `1800s` (30 minutes).
 
+### Manual Upload Hangs or Returns 499 (Client Closed)
+
+**Symptom:** Uploading a GMM/AIP manual hangs in the UI. Nginx logs show 499 for `/api/manuals/upload`.
+
+**Cause:** The manual parser can hang during text extraction on certain PDFs when using `pdfplumber`.
+
+**Fix:** Use PyMuPDF for manual parsing and rebuild the backend image.
+1. Update backend dependencies to include PyMuPDF:
+   - `backend/requirements.txt`: add `PyMuPDF>=1.24.0`
+2. Update manual parser to use PyMuPDF when available.
+3. Rebuild the backend image and restart the project.
+
+If the upload still hangs, test parsing inside the backend container and capture logs:
+```bash
+curl -i http://127.0.0.1:8888/api/health
+```
+
+Then re-try the upload and check backend logs for manual parsing activity.
+
 ### Container Build Uses Cached Layers
 
 **Symptom:** Changes to `nginx.conf` or other files don't take effect after rebuild.
