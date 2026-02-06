@@ -1148,7 +1148,11 @@ def export_audit_pdf(audit_id):
             pdf_bytes,
             mimetype='application/pdf',
             headers={
-                'Content-Disposition': f'attachment; filename="{filename}"'
+                'Content-Disposition': f'attachment; filename="{filename}"',
+                # Avoid browsers reusing a cached PDF for the same URL.
+                'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+                'Pragma': 'no-cache',
+                'Expires': '0',
             }
         )
     except Exception as e:

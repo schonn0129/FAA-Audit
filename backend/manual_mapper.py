@@ -6,11 +6,11 @@ Matches DCT questions to manual sections using:
 2. Optional semantic similarity via embeddings (sentence-transformers)
 """
 
+from __future__ import annotations
+
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
-
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from models import Audit, Manual, ManualSection, Question
 import database as db
@@ -18,6 +18,9 @@ import reference_context
 from config import EMBEDDING_ENABLED, EMBEDDING_MODEL, SEMANTIC_WEIGHT
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    import numpy as np
 
 STOPWORDS = {
     "the", "and", "for", "with", "that", "this", "from", "into", "when", "then",
@@ -647,8 +650,11 @@ def _get_embedding_service():
     try:
         from embedding_service import get_embedding_service
         return get_embedding_service(EMBEDDING_MODEL)
-    except ImportError as e:
-        logger.warning(f"Embedding service not available: {e}")
+    except Exception as e:
+        logger.warning(
+            f"Embeddings unavailable; semantic matching disabled. Reason: {e}",
+            exc_info=True,
+        )
         return None
 
 

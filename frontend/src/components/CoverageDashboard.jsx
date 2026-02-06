@@ -240,8 +240,10 @@ export default function CoverageDashboard({ auditId, onViewDeferred }) {
       <div className="pdf-export-section">
         <button
           onClick={() => {
+            // Cache-bust the GET so Safari/Chrome won't reuse an old PDF for the same URL.
             const url = api.getCompliancePdfExportUrl(auditId);
-            window.open(url, '_blank', 'noopener,noreferrer');
+            const cacheBustedUrl = `${url}?t=${Date.now()}`;
+            window.open(cacheBustedUrl, '_blank', 'noopener,noreferrer');
           }}
           className="btn-primary btn-export-pdf"
         >

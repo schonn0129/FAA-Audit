@@ -1,4 +1,4 @@
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
 const COLORS = [
   '#0088FE', // Blue - Maintenance Planning
@@ -20,9 +20,22 @@ export default function OwnershipPieChart({ byFunction }) {
     return <div className="chart-empty">No ownership data available</div>;
   }
 
+  const shortLabelForFunction = (name) => {
+    const normalized = (name || '').toLowerCase();
+    if (normalized.includes('maintenance planning')) return 'MP';
+    if (normalized.includes('maintenance operations center')) return 'MOC';
+    if (normalized.includes('director of maintenance')) return 'DOM';
+    if (normalized.includes('aircraft records')) return 'Records';
+    if (normalized.includes('quality')) return 'Quality';
+    if (normalized.includes('training')) return 'Training';
+    if (normalized.includes('safety')) return 'Safety';
+    return name;
+  };
+
   const data = Object.entries(byFunction)
     .map(([name, info]) => ({
       name,
+      shortName: shortLabelForFunction(name),
       value: info.total,
       percentage: info.percentage_of_audit
     }))
@@ -67,34 +80,47 @@ export default function OwnershipPieChart({ byFunction }) {
   return (
     <div className="chart-container ownership-pie">
       <h4 className="chart-title">QID Distribution by Owner</h4>
-      <ResponsiveContainer width="100%" height={300}>
-        <PieChart>
-          <Pie
-            data={data}
-            cx="50%"
-            cy="50%"
-            labelLine={false}
-            label={renderCustomLabel}
-            outerRadius={100}
-            fill="#8884d8"
-            dataKey="value"
-          >
-            {data.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-            ))}
-          </Pie>
-          <Tooltip content={<CustomTooltip />} />
-          <Legend
-            layout="vertical"
-            align="right"
-            verticalAlign="middle"
-            formatter={(value, entry) => {
-              const item = data.find(d => d.name === value);
-              return `${value} (${item?.value || 0})`;
-            }}
-          />
-        </PieChart>
-      </ResponsiveContainer>
+      <div className="chart-row">
+        <div className="chart-canvas">
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={data}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={renderCustomLabel}
+                outerRadius={105}
+                fill="#8884d8"
+                dataKey="value"
+              >
+                {data.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="chart-legend" aria-label="QID distribution legend">
+          {data.map((item, index) => (
+            <div
+              key={item.name}
+              className="legend-row"
+              title={item.name}
+            >
+              <span
+                className="legend-swatch"
+                style={{ backgroundColor: COLORS[index % COLORS.length] }}
+              />
+              <span className="legend-label">{item.shortName}</span>
+              <span className="legend-value">{item.value}</span>
+            </div>
+          ))}
+          <div className="legend-note">Hover the chart for full labels.</div>
+        </div>
+      </div>
     </div>
   );
 }

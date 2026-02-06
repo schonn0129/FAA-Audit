@@ -21,6 +21,7 @@ Design Principles:
 from datetime import datetime
 from io import BytesIO
 from typing import Any, Dict, List
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
@@ -28,12 +29,15 @@ from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import (
+    BaseDocTemplate,
+    Frame,
+    NextPageTemplate,
     PageBreak,
     Paragraph,
-    SimpleDocTemplate,
     Spacer,
     Table,
     TableStyle,
+    PageTemplate,
 )
 
 import database as db
@@ -114,6 +118,12 @@ def _get_styles() -> Dict[str, ParagraphStyle]:
             fontSize=8,
             leading=10,
         ),
+        "table_cell_small": ParagraphStyle(
+            "TableCellSmall",
+            parent=base["Normal"],
+            fontSize=7,
+            leading=9,
+        ),
         "footer": ParagraphStyle(
             "Footer",
             parent=base["Normal"],
@@ -122,6 +132,11 @@ def _get_styles() -> Dict[str, ParagraphStyle]:
             alignment=TA_CENTER,
         ),
     }
+
+def _cell(text: Any, style: ParagraphStyle) -> Paragraph:
+    """Create a wrapping table cell (Paragraph) with safe escaping."""
+    raw = "" if text is None else str(text)
+    return Paragraph(escape(raw).replace("\n", "<br/>"), style)
 
 
 # =============================================================================
@@ -285,7 +300,6 @@ def _build_executive_summary(data: Dict[str, Any], styles: Dict) -> List:
         styles["body"]
     ))
 
-    elements.append(PageBreak())
     return elements
 
 
@@ -309,9 +323,9 @@ def _build_ownership_table(data: Dict[str, Any], styles: Dict) -> List:
 
     for assignment in assignments:
         qid = assignment.get("qid", "")
-        question = assignment.get("question_text_condensed", "")[:80]
-        if len(assignment.get("question_text_condensed", "")) > 80:
-            question += "..."
+        question_text = assignment.get("question_text_condensed", "")[:160]
+        if len(assignment.get("question_text_condensed", "")) > 160:
+            question_text += "..."
         primary = assignment.get("primary_function", "Unassigned")
         confidence = assignment.get("confidence_score", "Low")
 
@@ -319,10 +333,17 @@ def _build_ownership_table(data: Dict[str, Any], styles: Dict) -> List:
         is_in_scope = primary in in_scope_functions
         scope_status = "In-Scope" if is_in_scope else "Deferred"
 
-        table_data.append([qid, question, primary, confidence, scope_status])
+        table_data.append([
+            qid,
+            _cell(question_text, styles["table_cell"]),
+            _cell(primary, styles["table_cell"]),
+            confidence,
+            scope_status,
+        ])
 
     # Create table with column widths
-    col_widths = [0.8*inch, 3.2*inch, 1.5*inch, 0.8*inch, 0.8*inch]
+    # Landscape pagesize gives ~10 inches of usable width with 0.5" margins.
+    col_widths = [0.9*inch, 4.8*inch, 2.1*inch, 0.8*inch, 1.4*inch]
     ownership_table = Table(table_data, colWidths=col_widths, repeatRows=1)
 
     # Build style commands
@@ -373,7 +394,6 @@ def _build_ownership_table(data: Dict[str, Any], styles: Dict) -> List:
         styles["small"]
     ))
 
-    elements.append(PageBreak())
     return elements
 
 
@@ -401,7 +421,6 @@ def _build_inscope_map(data: Dict[str, Any], styles: Dict) -> List:
             "<i>No in-scope questions found. Check scope configuration.</i>",
             styles["body"]
         ))
-        elements.append(PageBreak())
         return elements
 
     # Build MAP table
@@ -409,20 +428,29 @@ def _build_inscope_map(data: Dict[str, Any], styles: Dict) -> List:
 
     for row in map_rows:
         qid = row.get("QID", "")
-        question = row.get("Question_Text", "")[:60]
-        if len(row.get("Question_Text", "")) > 60:
-            question += "..."
-        aip = row.get("AIP_Reference", "")[:20] or "-"
-        gmm = row.get("GMM_Reference", "")[:20] or "-"
-        evidence = row.get("Evidence_Required", "")[:40]
-        if len(row.get("Evidence_Required", "")) > 40:
-            evidence += "..."
+        question_text = row.get("Question_Text", "")[:220]
+        if len(row.get("Question_Text", "")) > 220:
+            question_text += "..."
+        aip = (row.get("AIP_Reference", "") or "-")[:60]
+        gmm = (row.get("GMM_Reference", "") or "-")[:60]
+        evidence_text = row.get("Evidence_Required", "")[:180]
+        if len(row.get("Evidence_Required", "")) > 180:
+            evidence_text += "..."
         applicability = row.get("Applicability_Status", "Applicable")
 
-        table_data.append([qid, question, aip, gmm, evidence, applicability, "", ""])
+        table_data.append([
+            qid,
+            _cell(question_text, styles["table_cell_small"]),
+            _cell(aip, styles["table_cell_small"]),
+            _cell(gmm, styles["table_cell_small"]),
+            _cell(evidence_text, styles["table_cell_small"]),
+            applicability,
+            "",
+            "",
+        ])
 
-    # Column widths for landscape-ish fit
-    col_widths = [0.6*inch, 2*inch, 0.7*inch, 0.7*inch, 1.3*inch, 0.7*inch, 0.6*inch, 0.5*inch]
+    # Landscape pagesize gives ~10 inches of usable width with 0.5" margins.
+    col_widths = [0.75*inch, 3.1*inch, 0.9*inch, 0.9*inch, 2.0*inch, 0.85*inch, 0.75*inch, 0.75*inch]
     map_table = Table(table_data, colWidths=col_widths, repeatRows=1)
 
     style_commands = [
@@ -448,7 +476,6 @@ def _build_inscope_map(data: Dict[str, Any], styles: Dict) -> List:
     map_table.setStyle(TableStyle(style_commands))
     elements.append(map_table)
 
-    elements.append(PageBreak())
     return elements
 
 
@@ -471,7 +498,6 @@ def _build_deferred_log(data: Dict[str, Any], styles: Dict) -> List:
             "<i>No deferred items. All QIDs are in-scope for this audit.</i>",
             styles["body"]
         ))
-        elements.append(PageBreak())
         return elements
 
     # Summary by function
@@ -503,14 +529,14 @@ def _build_deferred_log(data: Dict[str, Any], styles: Dict) -> List:
     table_data = [["QID", "Question (Condensed)", "Assigned Owner", "Confidence"]]
     for item in deferred_items:
         qid = item.get("qid", "")
-        question = item.get("question_text_condensed", "")[:70]
-        if len(item.get("question_text_condensed", "")) > 70:
-            question += "..."
+        question_text = item.get("question_text_condensed", "")[:180]
+        if len(item.get("question_text_condensed", "")) > 180:
+            question_text += "..."
         owner = item.get("primary_function", "Unassigned")
         confidence = item.get("confidence_score", "Low")
-        table_data.append([qid, question, owner, confidence])
+        table_data.append([qid, _cell(question_text, styles["table_cell"]), _cell(owner, styles["table_cell"]), confidence])
 
-    col_widths = [0.8*inch, 3.5*inch, 1.5*inch, 0.8*inch]
+    col_widths = [0.9*inch, 5.4*inch, 2.4*inch, 1.3*inch]
     deferred_table = Table(table_data, colWidths=col_widths, repeatRows=1)
     deferred_table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), FAA_BLUE),
@@ -528,7 +554,6 @@ def _build_deferred_log(data: Dict[str, Any], styles: Dict) -> List:
     ]))
     elements.append(deferred_table)
 
-    elements.append(PageBreak())
     return elements
 
 
@@ -637,7 +662,6 @@ def _build_methodology_appendix(data: Dict[str, Any], styles: Dict) -> List:
     ]))
     elements.append(version_table)
 
-    elements.append(PageBreak())
     return elements
 
 
@@ -717,7 +741,8 @@ def _add_page_number(canvas, doc):
     canvas.saveState()
     canvas.setFont("Helvetica", 8)
     canvas.setFillColor(colors.gray)
-    canvas.drawCentredString(letter[0] / 2, 0.5 * inch, text)
+    page_width = getattr(canvas, "_pagesize", letter)[0]
+    canvas.drawCentredString(page_width / 2, 0.5 * inch, text)
     canvas.restoreState()
 
 
@@ -739,7 +764,7 @@ def generate_compliance_pdf(audit_id: str) -> bytes:
 
     # Build PDF in memory
     buffer = BytesIO()
-    doc = SimpleDocTemplate(
+    doc = BaseDocTemplate(
         buffer,
         pagesize=letter,
         rightMargin=0.5*inch,
@@ -750,17 +775,45 @@ def generate_compliance_pdf(audit_id: str) -> bytes:
         author="FAA DCT Compliance Engine",
     )
 
+    portrait_width, portrait_height = letter
+    landscape_width, landscape_height = landscape(letter)
+    portrait_frame = Frame(
+        doc.leftMargin,
+        doc.bottomMargin,
+        portrait_width - doc.leftMargin - doc.rightMargin,
+        portrait_height - doc.topMargin - doc.bottomMargin,
+        id="portrait_frame",
+    )
+    landscape_frame = Frame(
+        doc.leftMargin,
+        doc.bottomMargin,
+        landscape_width - doc.leftMargin - doc.rightMargin,
+        landscape_height - doc.topMargin - doc.bottomMargin,
+        id="landscape_frame",
+    )
+    doc.addPageTemplates([
+        PageTemplate(id="Portrait", frames=[portrait_frame], onPage=_add_page_number, pagesize=letter),
+        PageTemplate(id="Landscape", frames=[landscape_frame], onPage=_add_page_number, pagesize=landscape(letter)),
+    ])
+
     # Build all sections
     elements = []
     elements.extend(_build_executive_summary(data, styles))
+    elements.append(NextPageTemplate("Landscape"))
+    elements.append(PageBreak())
     elements.extend(_build_ownership_table(data, styles))
+    elements.append(PageBreak())
     elements.extend(_build_inscope_map(data, styles))
+    elements.append(PageBreak())
     elements.extend(_build_deferred_log(data, styles))
+    elements.append(NextPageTemplate("Portrait"))
+    elements.append(PageBreak())
     elements.extend(_build_methodology_appendix(data, styles))
+    elements.append(PageBreak())
     elements.extend(_build_signoff_page(data, styles))
 
     # Generate PDF
-    doc.build(elements, onFirstPage=_add_page_number, onLaterPages=_add_page_number)
+    doc.build(elements)
 
     # Return bytes
     buffer.seek(0)

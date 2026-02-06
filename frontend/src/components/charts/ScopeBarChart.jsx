@@ -1,4 +1,4 @@
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 /**
  * ScopeBarChart Component
@@ -10,11 +10,21 @@ export default function ScopeBarChart({ byFunction, inScopeFunctions }) {
     return <div className="chart-empty">No scope data available</div>;
   }
 
-  const inScopeSet = new Set(inScopeFunctions || []);
+  const shortLabelForFunction = (name) => {
+    const normalized = (name || '').toLowerCase();
+    if (normalized.includes('maintenance planning')) return 'MP';
+    if (normalized.includes('maintenance operations center')) return 'MOC';
+    if (normalized.includes('director of maintenance')) return 'DOM';
+    if (normalized.includes('aircraft records')) return 'Records';
+    if (normalized.includes('quality')) return 'Quality';
+    if (normalized.includes('training')) return 'Training';
+    if (normalized.includes('safety')) return 'Safety';
+    return name;
+  };
 
   const data = Object.entries(byFunction)
     .map(([name, info]) => ({
-      name: name.length > 15 ? name.substring(0, 12) + '...' : name,
+      name: shortLabelForFunction(name),
       fullName: name,
       inScope: info.in_scope ? info.total : 0,
       deferred: info.in_scope ? 0 : info.total,
@@ -45,15 +55,12 @@ export default function ScopeBarChart({ byFunction, inScopeFunctions }) {
       <ResponsiveContainer width="100%" height={300}>
         <BarChart
           data={data}
-          margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+          margin={{ top: 20, right: 20, left: 10, bottom: 20 }}
         >
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis
             dataKey="name"
-            angle={-45}
-            textAnchor="end"
             interval={0}
-            height={80}
             tick={{ fontSize: 11 }}
           />
           <YAxis
