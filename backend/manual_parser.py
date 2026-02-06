@@ -7,9 +7,13 @@ for deterministic MAP reference suggestions.
 
 import re
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 
 import pdfplumber
+try:
+    import fitz  # PyMuPDF
+except Exception:  # pragma: no cover - optional dependency
+    fitz = None
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +137,35 @@ def _extract_version(text: str) -> Optional[str]:
     return None
 
 
-def parse_manual_pdf(pdf_path: str) -> Dict[str, Any]:
+def _extract_page_texts(pdf_path: str, max_pages: Optional[int] = None
+                        ) -> Tuple[List[str], List[List[str]]]:
+    page_texts: List[str] = []
+    page_lines: List[List[str]] = []
+
+    if fitz is not None:
+        with fitz.open(pdf_path) as doc:
+            page_count = len(doc)
+            limit = min(page_count, max_pages) if max_pages and max_pages > 0 else page_count
+            for index in range(limit):
+                text = doc.load_page(index).get_text("text") or ""
+                page_texts.append(text)
+                lines = [line.strip() for line in text.split('\n') if line.strip()]
+                page_lines.append(lines)
+        return page_texts, page_lines
+
+    with pdfplumber.open(pdf_path) as pdf:
+        pages = pdf.pages
+        if max_pages and max_pages > 0:
+            pages = pages[:max_pages]
+        for page in pages:
+            text = page.extract_text() or ""
+            page_texts.append(text)
+            lines = [line.strip() for line in text.split('\n') if line.strip()]
+            page_lines.append(lines)
+    return page_texts, page_lines
+
+
+def parse_manual_pdf(pdf_path: str, max_pages: Optional[int] = None) -> Dict[str, Any]:
     """
     Parse a company manual PDF into structured sections.
 
@@ -141,16 +173,9 @@ def parse_manual_pdf(pdf_path: str) -> Dict[str, Any]:
         Dict with metadata and list of sections.
     """
     sections: List[Dict[str, Any]] = []
-    page_texts: List[str] = []
-    page_lines: List[List[str]] = []
     headings_by_page: Dict[int, int] = {}
 
-    with pdfplumber.open(pdf_path) as pdf:
-        for page_num, page in enumerate(pdf.pages, 1):
-            text = page.extract_text() or ""
-            page_texts.append(text)
-            lines = [line.strip() for line in text.split('\n') if line.strip()]
-            page_lines.append(lines)
+    page_texts, page_lines = _extract_page_texts(pdf_path, max_pages=max_pages)
 
     header_footer_lines = _collect_header_footer_lines(page_lines)
     current = None
