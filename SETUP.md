@@ -118,10 +118,58 @@ npm install
 4. Review the parsed JSON output
 5. Test with different PDF formats
 
+## Development Workflow (Two-Machine Setup)
+
+This project is developed on two machines with the app deployed on a Synology NAS:
+
+| Machine | Location | Access to NAS | Git Repo |
+|---------|----------|---------------|----------|
+| iMac | Home | SMB mount at `/Volumes/audit-app` | `~/FAA-Audit` |
+| Work PC | Office | SSH via Tailscale (`schonn.underwood@100.126.188.60`) | `~/FAA-Audit` |
+| NAS | Synology DS220+ | — | **No git** (deploy target only) |
+
+**GitHub repo:** `https://github.com/schonn0129/FAA-Audit.git`
+
+### Important: Never run git on the NAS
+The NAS is mounted via SMB which does not support git's file locking. All git operations must happen on local disk (`~/FAA-Audit`).
+
+### First-Time Setup (either machine)
+```bash
+git clone https://github.com/schonn0129/FAA-Audit.git ~/FAA-Audit
+cd ~/FAA-Audit
+chmod +x deploy-to-nas.sh deploy-from-work.sh
+```
+
+### Deploy from iMac (home)
+```bash
+cd ~/FAA-Audit
+git pull                       # get latest from GitHub
+./deploy-to-nas.sh             # dry-run — preview changes
+./deploy-to-nas.sh --go        # sync code to NAS over SMB
+```
+
+### Deploy from Work PC
+```bash
+cd ~/FAA-Audit
+git pull                       # get latest from GitHub
+./deploy-from-work.sh          # dry-run — preview changes
+./deploy-from-work.sh --go     # sync code to NAS over SSH/Tailscale
+```
+
+### After deploying, rebuild containers
+1. Open Container Manager on the NAS (via browser or QuickConnect)
+2. Stop the project
+3. Delete old images (`faa-audit-backend`, `faa-audit-frontend`)
+4. Rebuild and start the project
+
+### What the deploy scripts protect
+- `data/` directory is **never overwritten** (database, uploads, manuals stay on NAS)
+- `.git/`, `node_modules/`, `__pycache__/`, `.env` are excluded
+
 ## Development Notes
 
 - Backend uses Flask with CORS enabled
 - Frontend uses React with Vite
-- PDF parsing uses pdfplumber library
-- Data is stored in memory (not persistent - restart clears data)
-- For production, add a database (SQLite, PostgreSQL, etc.)
+- PDF parsing uses PyMuPDF (with pdfplumber fallback)
+- Data is stored in SQLite (`data/db/faa_audit.db`) on the NAS
+- Docker deployment via `compose.yaml` on Synology Container Manager
