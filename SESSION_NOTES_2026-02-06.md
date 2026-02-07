@@ -104,3 +104,46 @@ git pull
 ### Key Rule
 **Never run git on the NAS volume.** All git operations happen on local disk (`~/FAA-Audit`). The NAS is a deploy target only.
 
+---
+
+## Container Manager Fix
+
+### Problem
+Container Manager project showed red status even though both containers were running and the app was functional.
+
+### What Was Done
+
+#### 1) Fixed compose.yaml build context paths
+- `compose.yaml` referenced `./app/backend` and `./app/frontend` but code lives at `./backend` and `./frontend`
+- Updated paths to match the actual NAS directory structure
+
+#### 2) Switched backend to gunicorn
+- Flask's built-in Werkzeug dev server was writing a "development server" warning to stderr
+- Container Manager was likely flagging the stderr output and showing the project as red
+- Replaced with gunicorn (production WSGI server) with 600s timeout for long PDF jobs and 2 workers
+- Updated `backend/Dockerfile` and `backend/requirements.txt`
+
+### Result
+- Both containers running, app fully functional at `http://Underwood_Media.local:8888/`
+- Container Manager still shows red status (cosmetic — may need a full project delete/recreate to clear)
+- Health check confirmed: `{"status":"ok"}`
+
+### Files Updated
+- `compose.yaml` — fixed build context paths
+- `backend/Dockerfile` — switched CMD to gunicorn
+- `backend/requirements.txt` — added gunicorn dependency
+
+---
+
+## Outstanding Issues for Next Session
+
+### 1) MAP Mapping Not Robust Enough
+- Manual uploads now work (PyMuPDF fix), but the mapping quality needs improvement
+- Mapping was reported as failed after manual upload in the earlier session
+- Need to investigate mapping logic in `map_builder.py` and `manual_mapper.py`
+- May need to tune keyword matching, semantic scoring thresholds, or section parsing
+
+### 2) Container Manager Red Status (Cosmetic)
+- App works fine, both containers healthy
+- Red status persists — may require deleting the project entirely and recreating from compose.yaml
+

@@ -287,6 +287,24 @@ Check the backend logs for detailed error messages. The MAP endpoint now logs:
    curl -X POST http://localhost:5000/api/audits/<id>/ownership
    ```
 
+### Container Manager Project Shows Red Status
+
+**Symptom:** The audit-app project in Container Manager shows a red status indicator, but both containers (frontend and backend) are running and the app is functional.
+
+**Cause:** Container Manager may cache a previous failed state, or flag stderr output from containers as errors. The Werkzeug dev server warning was one known trigger (now fixed by switching to gunicorn).
+
+**Diagnosis:**
+```bash
+# Verify the app is actually working
+curl http://your-nas-ip:8888/api/health
+# Should return: {"status":"ok","timestamp":"..."}
+```
+
+**Fix:**
+1. If health check passes, the red status is cosmetic
+2. Try stopping and starting the project (not rebuild)
+3. If that doesn't clear it, delete the project entirely in Container Manager and recreate it from `compose.yaml`
+
 ### 404 Error on /api/audits/<id>
 
 **Symptom:** Repeated 404 errors in browser console for audit endpoints.
@@ -297,3 +315,26 @@ Check the backend logs for detailed error messages. The MAP endpoint now logs:
 1. Refresh the browser page (hard refresh: Cmd+Shift+R or Ctrl+Shift+R)
 2. Clear browser local storage for the site
 3. Navigate back to the audit list and select a valid audit
+
+---
+
+## MAP Mapping Quality
+
+### Mapping Reported as Failed or Incomplete
+
+**Symptom:** After uploading a manual (GMM/AIP), the MAP generation runs but results are incomplete, low quality, or reported as failed.
+
+**Status:** Known issue — mapping logic needs improvement. Areas to investigate:
+- `map_builder.py` — MAP row generation and scoring logic
+- `manual_mapper.py` — manual-to-DCT matching algorithms
+- Keyword matching thresholds may be too strict or too loose
+- Semantic scoring (sentence-transformers embeddings) may need tuning
+- Manual section parsing may be splitting sections in suboptimal ways
+
+**Workaround:** Use the debug endpoint to see why matches are being made:
+```bash
+curl http://your-nas-ip:8888/api/audits/<audit_id>/map?debug=1
+```
+Each row includes `auto_suggestions_debug` with scores and keyword/phrase hits.
+
+**To be addressed in a future session.**
