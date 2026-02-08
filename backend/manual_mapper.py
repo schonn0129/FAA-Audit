@@ -74,11 +74,22 @@ PROHIBITION_PHRASES = {
 }
 
 PHRASE_WEIGHTS = {
-    "airworthiness directives": 3.0,
-    "airworthiness directive": 3.0,
-    "ad management": 3.0,
-    "ad management process": 3.5,
-    "ad process measurement": 2.5,
+    # AD Management - high weights for specific AD terms
+    "airworthiness directives": 5.0,
+    "airworthiness directive": 5.0,
+    "ad management": 5.0,
+    "ad management process": 6.0,
+    "ad compliance": 5.0,
+    "ad tracking": 4.0,
+    "ad status": 4.0,
+    "ad applicability": 4.0,
+    "recurring ad": 4.5,
+    "one-time ad": 4.5,
+    "terminating action": 4.0,
+    "amoc": 4.0,
+    "alternative method of compliance": 4.0,
+    "ad process measurement": 3.5,
+    # Audit/compliance
     "audit program": 2.5,
     "audit procedures": 2.0,
     "method of auditing": 2.5,
@@ -89,8 +100,10 @@ PHRASE_WEIGHTS = {
     "compliance monitoring": 1.8,
     "internal audit": 1.8,
     "self audit": 1.6,
+    # Inspection program
     "inspection program": 2.5,
     "inspection schedule": 2.0,
+    # Maintenance program
     "maintenance program": 2.5,
     "maintenance inspection": 2.0,
     "maintenance schedule": 2.0,
@@ -98,8 +111,10 @@ PHRASE_WEIGHTS = {
     "continuous airworthiness maintenance program": 2.5,
     "task card": 1.5,
     "work package": 1.5,
+    # Records
     "records retention": 2.0,
     "record keeping": 2.0,
+    # Prohibition phrases
     "do not operate": 6.0,
     "not operated": 4.0,
     "not operate": 5.0,
@@ -108,6 +123,15 @@ PHRASE_WEIGHTS = {
     "will not operate": 6.0,
     "must not operate": 6.0
 }
+
+# Title bonus: boost score when section title contains key topic terms
+TITLE_TOPIC_BONUS = {
+    "ad management": ["airworthiness directive", "airworthiness directives", "ad management", "ad compliance"],
+    "mel": ["minimum equipment list", "mel", "deferred"],
+    "inspection program": ["inspection program", "inspection schedule"],
+    "maintenance program": ["maintenance program", "camp"],
+}
+TITLE_BONUS_SCORE = 4.0
 
 NOTE_NOISE_PATTERNS = [
     re.compile(r"UNCONTROLLED\s+COPY", re.IGNORECASE),
@@ -251,8 +275,29 @@ TOPIC_TRIGGERS = {
         "aircraft records", "logbook", "log book", "record keeping",
         "records retention", "time since new", "time since overhaul",
         "aircraft maintenance log", "aml"
+    ],
+    "mel": [
+        "minimum equipment list", "mel", "mmel", "deferred", "deferral",
+        "inoperative equipment", "configuration deviation"
+    ],
+    "transponder": [
+        "transponder", "ads-b", "adsb", "mode s", "mode c", "squawk",
+        "altitude encoder", "atc transponder"
     ]
 }
+
+# Topic exclusions: when question is about topic X, penalize sections about topic Y
+# Format: { question_topic: [excluded_section_topics] }
+TOPIC_EXCLUSIONS = {
+    "ad management": ["mel", "transponder", "moc"],
+    "mel": ["ad management"],
+    "transponder": ["ad management"],
+    "inspection program": ["mel", "transponder"],
+    "maintenance program": ["transponder"],
+}
+
+# Penalty applied when a section matches an excluded topic
+TOPIC_EXCLUSION_PENALTY = 8.0
 
 NORMALIZE_TOKEN_MAP = {
     "operated": "operate",
@@ -403,6 +448,50 @@ def _build_question_context(question: Question) -> Tuple[set, List[str]]:
     return tokens, sorted(phrases)
 
 
+def _detect_question_topics(tokens: set, full_text: str) -> List[str]:
+    """
+    Detect which topics a question is primarily about.
+    Returns a list of detected topic names.
+    """
+    detected: List[str] = []
+    text_lower = full_text.lower()
+    token_text = " ".join(sorted(tokens))
+
+    for topic, triggers in TOPIC_TRIGGERS.items():
+        for trigger in triggers:
+            if trigger in text_lower or trigger in token_text:
+                detected.append(topic)
+                break
+
+    return detected
+
+
+def _section_matches_excluded_topic(section_text: str, section_title: str,
+                                     question_topics: List[str]) -> Tuple[bool, List[str]]:
+    """
+    Check if a section matches a topic that should be excluded for the question's topics.
+
+    Returns:
+        (is_excluded, list of matched exclusion topics)
+    """
+    if not question_topics:
+        return False, []
+
+    combined_text = (section_title + " " + section_text).lower()
+    matched_exclusions: List[str] = []
+
+    for q_topic in question_topics:
+        excluded_topics = TOPIC_EXCLUSIONS.get(q_topic, [])
+        for excluded_topic in excluded_topics:
+            triggers = TOPIC_TRIGGERS.get(excluded_topic, [])
+            for trigger in triggers:
+                if trigger in combined_text:
+                    matched_exclusions.append(excluded_topic)
+                    break
+
+    return len(matched_exclusions) > 0, list(set(matched_exclusions))
+
+
 def _question_has_prohibition_intent(tokens: set, full_text: str) -> bool:
     if any(p.search(full_text) for p in PROHIBITION_PATTERNS):
         return True
@@ -416,7 +505,8 @@ def _question_has_prohibition_intent(tokens: set, full_text: str) -> bool:
 
 def _score_section_segment(question_tokens: set, question_cfrs: set, question_phrases: List[str],
                            section_title: str, segment_text: str,
-                           section: ManualSection, allow_prohibition: bool = True) -> Tuple[float, Dict[str, Any]]:
+                           section: ManualSection, allow_prohibition: bool = True,
+                           question_topics: List[str] = None) -> Tuple[float, Dict[str, Any]]:
     title_text = (section_title or "")
     section_tokens = set(_tokenize(title_text + " " + (segment_text or "")))
 
@@ -451,17 +541,36 @@ def _score_section_segment(question_tokens: set, question_cfrs: set, question_ph
             "phrase_hits": ["prohibit operation (filtered)"]
         }
 
-    score = cfr_score + overlap_score + phrase_score + prohibition_bonus
+    # Apply title bonus when section title matches question topic
+    title_bonus = 0.0
+    title_bonus_reason = None
+    if question_topics:
+        for q_topic in question_topics:
+            bonus_terms = TITLE_TOPIC_BONUS.get(q_topic, [])
+            for term in bonus_terms:
+                if term in title_lower:
+                    title_bonus = TITLE_BONUS_SCORE
+                    title_bonus_reason = f"title contains '{term}'"
+                    break
+            if title_bonus > 0:
+                break
+
+    score = cfr_score + overlap_score + phrase_score + prohibition_bonus + title_bonus
     if title_lower.strip() in GENERIC_SECTION_TITLES:
         score -= 2.0
     # Penalize matches that only hit vague/generic tokens.
     if overlap and overlap.issubset(WEAK_TOKENS) and len(overlap) <= WEAK_TOKEN_MIN_OVERLAP:
         score -= WEAK_TOKEN_PENALTY
-    return score, {
+
+    signals = {
         "cfr_matches": sorted(cfr_matches),
         "keyword_hits": sorted(list(overlap))[:10],
         "phrase_hits": sorted(set(phrase_hits))
     }
+    if title_bonus_reason:
+        signals["title_bonus"] = title_bonus_reason
+
+    return score, signals
 
 
 def _rank_sections(question: Question, sections: List[ManualSection]) -> List[Dict[str, Any]]:
@@ -483,13 +592,23 @@ def _rank_sections(question: Question, sections: List[ManualSection]) -> List[Di
         ]
     question_cfrs = set(question.reference_cfr_list or [])
 
-    scored: List[Tuple[float, ManualSection, Dict[str, Any], str]] = []
+    # Detect question topics for exclusion filtering
+    question_topics = _detect_question_topics(question_tokens, full_text)
+
+    scored: List[Tuple[float, ManualSection, Dict[str, Any], str, List[str]]] = []
 
     for section in sections:
         section_title = (section.section_title or "")
+        section_text = (section.section_text or "")
         segments = _split_section_into_segments(section)
         if not segments:
             continue
+
+        # Check if this section matches an excluded topic
+        is_excluded, excluded_topics = _section_matches_excluded_topic(
+            section_text, section_title, question_topics
+        )
+
         for seg in segments:
             score, signals = _score_section_segment(
                 question_tokens,
@@ -498,10 +617,17 @@ def _rank_sections(question: Question, sections: List[ManualSection]) -> List[Di
                 section_title,
                 seg.get("text", ""),
                 section,
-                allow_prohibition=allow_prohibition
+                allow_prohibition=allow_prohibition,
+                question_topics=question_topics
             )
+
+            # Apply topic exclusion penalty
+            if is_excluded:
+                score -= TOPIC_EXCLUSION_PENALTY
+                signals["excluded_topics"] = excluded_topics
+
             if score >= MIN_SCORE:
-                scored.append((score, section, signals, seg.get("label")))
+                scored.append((score, section, signals, seg.get("label"), excluded_topics))
 
     if not scored:
         return []
@@ -517,12 +643,12 @@ def _rank_sections(question: Question, sections: List[ManualSection]) -> List[Di
     )
 
     suggestions: List[Dict[str, Any]] = []
-    for score, section, signals, paragraph_label in scored[:MAX_SUGGESTIONS_PER_MANUAL]:
+    for score, section, signals, paragraph_label, excluded_topics in scored[:MAX_SUGGESTIONS_PER_MANUAL]:
         section_number = section.section_number or ""
         section_display = section_number or section.section_title or ""
         if paragraph_label and section_number:
             section_display = f"{section_number}({paragraph_label})"
-        suggestions.append({
+        suggestion = {
             "manual_id": section.manual_id,
             "manual_type": section.manual.manual_type if section.manual else None,
             "section": section_display,
@@ -533,7 +659,10 @@ def _rank_sections(question: Question, sections: List[ManualSection]) -> List[Di
             "score": round(score, 2),
             "match_signals": signals,
             "source": "auto"
-        })
+        }
+        if excluded_topics:
+            suggestion["excluded_topics"] = excluded_topics
+        suggestions.append(suggestion)
 
     return suggestions
 
@@ -753,16 +882,25 @@ def suggest_manual_links_enhanced(
         question_phrases = [p for p in question_phrases if p not in PROHIBITION_PHRASES]
     question_cfrs = set(question.reference_cfr_list or [])
 
+    # Detect question topics for exclusion filtering
+    question_topics = _detect_question_topics(question_tokens, full_text)
+
     # Score all sections
     all_scored: List[Dict[str, Any]] = []
 
     for manual_type, sections in sections_by_type.items():
         for section in sections:
             section_title = section.section_title or ""
+            section_text = section.section_text or ""
             segments = _split_section_into_segments(section)
 
             if not segments:
                 continue
+
+            # Check if this section matches an excluded topic
+            is_excluded, excluded_topics = _section_matches_excluded_topic(
+                section_text, section_title, question_topics
+            )
 
             # Compute section embedding (once per section, not per segment)
             try:
@@ -781,8 +919,14 @@ def suggest_manual_links_enhanced(
                     section_title,
                     seg.get("text", ""),
                     section,
-                    allow_prohibition=allow_prohibition
+                    allow_prohibition=allow_prohibition,
+                    question_topics=question_topics
                 )
+
+                # Apply topic exclusion penalty
+                if is_excluded:
+                    det_score -= TOPIC_EXCLUSION_PENALTY
+                    signals["excluded_topics"] = excluded_topics
 
                 # Skip very low deterministic scores unless semantic is high
                 if det_score < 1.0 and semantic_similarity < 0.3:

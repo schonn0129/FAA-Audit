@@ -338,3 +338,95 @@ curl http://your-nas-ip:8888/api/audits/<audit_id>/map?debug=1
 Each row includes `auto_suggestions_debug` with scores and keyword/phrase hits.
 
 **To be addressed in a future session.**
+
+---
+
+## Session Log: 2026-02-07
+
+### Issue: MAP Mapping Incorrect for QID 00004724
+
+**Problem:** For QID 00004724 (AD Management), the application mapped:
+- `6.4(b)` - should be `6.4.1(b)`
+- `5.2(f)`, `5.2(i)`, `14.13(i)` - incorrectly matched (these are MEL/transponder sections, not AD-related)
+
+**Root Cause Analysis:**
+
+1. **Section Number Parsing Too Coarse** (`manual_parser.py:20-24`)
+   - The parser captures section `6.4` but subsection `6.4.1` may not be detected as a separate section
+   - Paragraph `(b)` gets attributed to `6.4` instead of `6.4.1`
+
+2. **Keyword Matching Too Broad** (`manual_mapper.py:76-110`)
+   - Sections `5.2(f)`, `5.2(i)`, `14.13(i)` match because they share generic keywords like "operate", "compliance", "equipment"
+   - These sections are about MEL/transponders, NOT Airworthiness Directives
+   - No topic exclusion logic exists to filter out unrelated content
+
+3. **No Topic-Based Filtering**
+   - If a question is about "AD Management", sections about "MEL", "transponder", "deferred items" should be penalized or excluded
+   - Current logic only looks for positive matches, not negative/exclusion signals
+
+**Fixes Implemented:**
+
+1. **Improved section hierarchy parsing** (`manual_parser.py`)
+   - Added pattern to detect section numbers alone on a line (e.g., "6.4.1" without title)
+   - Added `_extract_inline_subsections()` function to detect subsections embedded within parent section text
+   - Subsections like 6.4.1, 6.4.2 within section 6.4 are now extracted as separate sections
+
+2. **Added topic exclusion rules** (`manual_mapper.py`)
+   - New `TOPIC_EXCLUSIONS` dictionary defines which topics should NOT match
+   - When question is about "ad management", sections about "mel", "transponder", "moc" are penalized (-8.0 score)
+   - Added `_detect_question_topics()` to identify what a question is about
+   - Added `_section_matches_excluded_topic()` to check if section contains excluded content
+   - Exclusions are logged in `match_signals["excluded_topics"]` for debugging
+
+3. **Strengthened AD Management phrase matching** (`manual_mapper.py`)
+   - Increased weights for AD-specific phrases:
+     - "airworthiness directives/directive": 3.0 → 5.0
+     - "ad management": 3.0 → 5.0
+     - "ad management process": 3.5 → 6.0
+   - Added new AD-specific phrases: "ad compliance", "ad tracking", "ad status", "ad applicability", "recurring ad", "one-time ad", "terminating action", "amoc"
+
+4. **Added title bonus scoring** (`manual_mapper.py`)
+   - New `TITLE_TOPIC_BONUS` dictionary boosts sections whose title matches the question topic
+   - When section title contains "airworthiness directive" and question is about AD management: +4.0 score
+   - Helps prioritize section 6.4.1 "AD Management Process" over generic sections
+
+5. **Fixed revision history pollution** (`manual_parser.py`)
+   - Added `_is_revision_history_line()` to detect revision log entries
+   - Lines starting with "Revised", "Added", "Deleted" or containing "=to=" are skipped
+   - Prevents revision history entries from being parsed as section headings
+   - Reduced spurious section count from 2353 to 2275
+
+**Status:** Implemented and tested locally
+
+**Test Results (simulated QID 00004724 - AD Management):**
+```
+Top matches after fixes:
+  Score 26.30 | 6.4.12(a) - AD Process Measurement
+  Score 23.00 | 6.4.1(b)  - General (correct match!)
+  Score 14.00 | 6.4.1(a)  - General
+
+MEL sections correctly penalized:
+  Score 14.00 | 5.2.1(f)  - [EXCLUDED] penalty applied
+  Score  2.00 | 5.2.1(a)  - [EXCLUDED]
+  Score -1.00 | 5.2.13.3  - [EXCLUDED]
+```
+
+**Key improvements:**
+- 6.4.1(b) now correctly identified (was 6.4(b) before)
+- MEL sections (5.2.x) receive -8.0 penalty for AD questions
+- Subsection detection working (6.4.1 detected as separate from 6.4)
+
+**To apply changes on NAS:**
+1. Rebuild Docker containers to pick up code changes
+2. Re-parse the GMM manual
+3. Regenerate MAP for the audit
+
+```bash
+# After rebuilding containers:
+
+# Re-parse existing manual
+curl -X POST http://your-nas-ip:8888/api/manuals/<manual_id>/reparse
+
+# Regenerate MAP with debug info
+curl "http://your-nas-ip:8888/api/audits/<audit_id>/map?debug=1"
+```

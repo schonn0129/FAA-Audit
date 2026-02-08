@@ -18,10 +18,20 @@ except Exception:  # pragma: no cover - optional dependency
 logger = logging.getLogger(__name__)
 
 SECTION_PATTERNS = [
+    # Chapter headings: "CHAPTER 6", "Chapter IV"
     re.compile(r'^(CHAPTER|Chapter)\s+([0-9IVX]+)\b\.?\s*(.*)$'),
+    # Section with label: "SECTION 6.4.1", "Section 5.2"
     re.compile(r'^(SECTION|Section)\s+(\d+(?:\.\d+){0,4})\b\.?\s*(.*)$'),
+    # Numbered section with title: "6.4.1 AD Management Process"
     re.compile(r'^(\d+(?:\.\d+){1,4})\s*[-–—:]?\s*(.+)$'),
+    # Numbered section alone on line: "6.4.1" or "6.4.1."
+    re.compile(r'^(\d+(?:\.\d+){1,4})\.?\s*$'),
 ]
+
+# Pattern to detect subsection numbers within text (for inline subsection detection)
+INLINE_SUBSECTION_PATTERN = re.compile(
+    r'(?:^|\n)\s*(\d+\.\d+(?:\.\d+)+)\s*[-–—:]?\s*([A-Z][^.!?\n]{10,})'
+)
 
 CFR_PATTERN = re.compile(
     r'\b\d+\s*CFR\s*(?:Part\s*)?\d+\.\d+[a-z0-9\.\(\)]*',
@@ -105,22 +115,107 @@ def _collect_header_footer_lines(pages: List[List[str]]) -> List[str]:
     return [line for line, count in candidates.items() if count >= threshold]
 
 
+def _is_revision_history_line(line: str) -> bool:
+    """Check if a line appears to be from a revision history section."""
+    line_lower = line.lower()
+    # Revision history entries typically start with "Revised" or contain revision-specific text
+    if line_lower.startswith("revised "):
+        return True
+    if "=to=" in line_lower:  # Common pattern in revision notes: "changed X =to= Y"
+        return True
+    if line_lower.startswith("added ") and len(line) < 100:
+        return True
+    if line_lower.startswith("deleted ") and len(line) < 100:
+        return True
+    return False
+
+
 def _match_heading(line: str) -> Optional[Dict[str, str]]:
     """Return section metadata if the line matches a heading pattern."""
+    # Skip lines that look like revision history entries
+    if _is_revision_history_line(line):
+        return None
+
     for pattern in SECTION_PATTERNS:
         match = pattern.match(line)
         if match:
-            if len(match.groups()) == 3:
+            groups = match.groups()
+            if len(groups) == 3:
+                # CHAPTER/SECTION prefix patterns
                 section_number = match.group(2)
                 section_title = match.group(3) or ""
-            else:
+            elif len(groups) == 2:
+                # Numbered section with title
                 section_number = match.group(1)
                 section_title = match.group(2) or ""
+            elif len(groups) == 1:
+                # Numbered section alone (no title on same line)
+                section_number = match.group(1)
+                section_title = ""
+            else:
+                continue
+
+            # Additional validation: skip if title looks like revision history
+            if section_title and _is_revision_history_line(section_title):
+                return None
+
             return {
                 "section_number": section_number.strip(),
                 "section_title": section_title.strip()
             }
     return None
+
+
+def _extract_inline_subsections(section: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Extract subsections that may be embedded inline within a section's text.
+
+    For example, section 6.4 might contain subsections 6.4.1, 6.4.2, etc.
+    that weren't detected as separate headings.
+    """
+    text = section.get("section_text", "") or ""
+    parent_number = section.get("section_number", "") or ""
+    page_number = section.get("page_number", 1)
+
+    if not parent_number or not text:
+        return []
+
+    # Only look for subsections if parent has at least one dot (e.g., 6.4)
+    if "." not in parent_number:
+        return []
+
+    subsections: List[Dict[str, Any]] = []
+    matches = list(INLINE_SUBSECTION_PATTERN.finditer(text))
+
+    if not matches:
+        return []
+
+    for i, match in enumerate(matches):
+        sub_number = match.group(1)
+        sub_title = match.group(2).strip() if match.group(2) else ""
+
+        # Only include if it's actually a child of the parent section
+        if not sub_number.startswith(parent_number + "."):
+            continue
+
+        # Extract text from this subsection to the next (or end)
+        start_pos = match.end()
+        if i + 1 < len(matches):
+            end_pos = matches[i + 1].start()
+        else:
+            end_pos = len(text)
+
+        sub_text = text[start_pos:end_pos].strip()
+
+        subsections.append({
+            "section_number": sub_number,
+            "section_title": sub_title,
+            "section_text": sub_text,
+            "page_number": page_number,
+            "parent_section": parent_number
+        })
+
+    return subsections
 
 
 def _extract_version(text: str) -> Optional[str]:
@@ -211,15 +306,26 @@ def parse_manual_pdf(pdf_path: str, max_pages: Optional[int] = None) -> Dict[str
                 "page_number": 1
             }]
 
+    # Extract inline subsections from each section
+    all_sections: List[Dict[str, Any]] = []
     for section in sections:
         text = section.get("section_text", "")
         citations = CFR_PATTERN.findall(text or "")
         section["cfr_citations"] = sorted(set(citations))
+        all_sections.append(section)
+
+        # Check for inline subsections
+        inline_subs = _extract_inline_subsections(section)
+        for sub in inline_subs:
+            sub_text = sub.get("section_text", "")
+            sub["cfr_citations"] = sorted(set(CFR_PATTERN.findall(sub_text or "")))
+            all_sections.append(sub)
+            logger.debug(f"Extracted inline subsection: {sub.get('section_number')}")
 
     combined_all = "\n\n".join(page_texts)
     return {
         "page_count": len(page_texts),
         "version": _extract_version(combined_all),
-        "sections": sections,
-        "parse_report": _build_parse_report(page_texts, sections, headings_by_page, header_footer_lines)
+        "sections": all_sections,
+        "parse_report": _build_parse_report(page_texts, all_sections, headings_by_page, header_footer_lines)
     }
