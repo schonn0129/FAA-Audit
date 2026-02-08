@@ -44,3 +44,6 @@ dist/
 build/
 FAA-Audit/
 .claude/
+
+# NAS data directory (database, uploads, manuals)
+data/
