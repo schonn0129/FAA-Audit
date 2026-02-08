@@ -241,6 +241,112 @@ Then access the app at `http://your-nas-ip:9999` instead.
 
 ---
 
+## Windows Docker Desktop Issues
+
+### Docker Daemon Not Running
+
+**Symptom:** `docker: command not found` or `Cannot connect to Docker daemon`
+
+**Fix:**
+1. Make sure Docker Desktop is installed and running
+2. Check the system tray (bottom-right corner) for Docker Desktop icon
+3. If not running, click the icon to start Docker Desktop
+4. Wait for "Docker Desktop is running" notification
+5. Try your command again
+
+### WSL 2 Integration Not Working
+
+**Symptom:** `docker ps` works but containers hang or are very slow
+
+**Fix:**
+1. Open Docker Desktop Settings
+2. Go to **Resources** → **WSL Integration**
+3. Enable WSL Integration with your distribution
+4. Apply & Restart Docker Desktop
+5. This dramatically improves performance on Windows
+
+### Ports Already in Use (8888 or 5000)
+
+**Symptom:** Error like "bind failed: port is already allocated"
+
+**Fix:** Change the port in `docker-compose.windows.yml`:
+```yaml
+frontend:
+  ports:
+    - "8889:80"    # Change 8888 to 8889 (or any free port)
+
+backend:
+  ports:
+    - "5001:5000"  # Change 5000 to 5001
+```
+Then restart with `.\docker-start.ps1 up`
+
+### PowerShell Script Won't Execute
+
+**Symptom:** `"cannot be loaded because running scripts is disabled on this system"`
+
+**Fix:** Open PowerShell as Administrator and run:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+Then try running the script again.
+
+### Containers Stop Immediately After Starting
+
+**Symptom:** `docker ps` shows containers exited, not running
+
+**Fix:** Check logs:
+```powershell
+.\docker-start.ps1 logs
+```
+Common causes:
+- Backend can't bind to port (another service using it)
+- Not enough disk space for images (~5-10GB required)
+- Not enough memory allocated to Docker (set to 4GB+ in Docker Settings)
+
+### Docker Desktop Runs Out of Disk Space
+
+**Symptom:** Build fails with "no disk space" or containers won't start
+
+**Fix:**
+```powershell
+# Check Docker disk usage
+docker system df
+
+# Clean up unused images/containers
+docker system prune -a
+
+# Or completely reset Docker Desktop
+# Settings → General → Reset and restart
+```
+
+### File Permissions on Windows
+
+**Symptom:** "Permission denied" errors when uploading files
+
+**Fix:** Windows and Docker handle permissions differently. Usually not an issue, but if you encounter it:
+1. Ensure `backend/uploads/`, `backend/manuals/`, `backend/data/` exist
+2. They should be empty directories initially
+3. Docker will create files inside them with proper permissions
+
+### Slow File System Performance
+
+**Symptom:** Uploads are very slow or parsing takes long times
+
+**Fix:**
+1. Enable **WSL 2 Integration** in Docker Desktop Settings
+2. Store files on fast SSD (not network drive)
+3. Allocate more CPU cores to Docker (Settings → Resources)
+4. Increase allocated memory to 6-8GB if available
+
+### "version is obsolete" Warning
+
+**Symptom:** `the attribute 'version' is obsolete, it will be ignored`
+
+**Fix:** This is just a warning and doesn't affect functionality. To remove it, edit `docker-compose.windows.yml` and remove the `version: "3.9"` line (if present in future versions).
+
+---
+
 ## MAP Generation Errors
 
 ### 500 Internal Server Error on /api/audits/<id>/map

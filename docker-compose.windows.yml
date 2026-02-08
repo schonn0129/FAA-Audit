@@ -1,0 +1,63 @@
+# FAA Audit Application - Windows Docker Compose
+# This file is optimized for running on Windows with Docker Desktop
+# 
+# To start: docker-compose -f docker-compose.windows.yml up -d
+# To stop:  docker-compose -f docker-compose.windows.yml down
+# To view logs: docker-compose -f docker-compose.windows.yml logs -f
+
+version: "3.9"
+
+services:
+  # Python Flask Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: faa-audit-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      # Persistent data storage - Windows paths
+      - ./backend/uploads:/app/uploads
+      - ./backend/manuals:/app/manuals
+      - ./backend/data:/app/data
+    environment:
+      - FLASK_ENV=production
+      - EMBEDDING_ENABLED=true
+      - DATABASE_PATH=/app/data/faa_audit.db
+      - UPLOAD_FOLDER=/app/uploads
+      - MANUALS_FOLDER=/app/manuals
+      - PYTHONUNBUFFERED=1
+    networks:
+      - faa-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # React Frontend served by nginx
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: faa-audit-frontend
+    restart: unless-stopped
+    ports:
+      - "8888:80"
+    depends_on:
+      - backend
+    networks:
+      - faa-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  faa-network:
+    driver: bridge

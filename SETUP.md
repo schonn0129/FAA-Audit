@@ -2,7 +2,28 @@
 
 ## Quick Setup (Recommended)
 
-### Option 1: Use the startup script (macOS/Linux)
+### Option 1: Windows Docker (Recommended for Windows Users)
+
+For Windows 10/11 with Docker Desktop installed:
+
+```powershell
+cd C:\Users\YourName\FAA-Audit
+.\docker-start.ps1 up
+```
+
+Access the app at http://localhost:8888
+
+**Benefits:**
+- ✅ Simplest setup on Windows
+- ✅ No Python/Node.js install needed
+- ✅ Faster embedding model (pre-downloaded)
+- ✅ Isolated environment
+
+**See:** [WINDOWS_SETUP.md](WINDOWS_SETUP.md) for detailed setup & troubleshooting
+
+---
+
+### Option 2: Use the startup script (macOS/Linux)
 
 ```bash
 ./start.sh
@@ -14,7 +35,7 @@ This will:
 - Install Node.js packages
 - Start both backend and frontend servers
 
-### Option 2: Manual Setup
+### Option 3: Manual Setup
 
 #### Step 1: Backend Setup
 
