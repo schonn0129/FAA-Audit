@@ -536,3 +536,47 @@ curl -X POST http://your-nas-ip:8888/api/manuals/<manual_id>/reparse
 # Regenerate MAP with debug info
 curl "http://your-nas-ip:8888/api/audits/<audit_id>/map?debug=1"
 ```
+
+---
+
+## Session Log: 2026-02-09
+
+### Issue: Section Number Regex Mis-Parsing Subsection Numbers
+
+**Problem:** For QID 00004334, the MAP displayed:
+- `3.1(c)` - should be `3.1.1(c)`
+- `14.1(c)` - should be `14.1.1(c)`
+- `14.7(i)` - should be `14.7.2(i)`
+
+The parser was storing `section_number="3.1"` with `section_title=".1"` instead of `section_number="3.1.1"`. This affected all standalone subsection numbers across the entire manual.
+
+**Root Cause:** Regex Pattern 3 in `manual_parser.py` (line 27) was too greedy.
+
+When the PDF contained a line like just `3.1.1` (subsection number alone, no title text), Pattern 3 (`^(\d+(?:\.\d+){1,4})\s*[-–—:]?\s*(.+)$`) matched first and split it as:
+- Group 1: `3.1` (section number)
+- Group 2: `.1` (captured as "title")
+
+Pattern 4 (`^(\d+(?:\.\d+){1,4})\.?\s*$`) would have correctly matched `3.1.1` as a complete section number, but Pattern 3 won because it appeared earlier in the list.
+
+**Fix:** Changed Pattern 3's title capture group from `(.+)` to `([A-Za-z].*)` so the title portion must start with a letter character. This prevents the last `.N` of a section number from being consumed as a title.
+
+```python
+# Before (broken):
+re.compile(r'^(\d+(?:\.\d+){1,4})\s*[-–—:]?\s*(.+)$')
+
+# After (fixed):
+re.compile(r'^(\d+(?:\.\d+){1,4})\s*[-–—:]?\s*([A-Za-z].*)$')
+```
+
+**Verification:**
+- Database before fix: zero `3.1.x` subsections, all stored as `3.1` with title `.1`, `.2`, etc.
+- Database after fix: `3.1.1`, `3.1.2`, `3.1.3`, etc. correctly stored as proper section numbers
+- Section count changed from 3005 to 2502 (duplicate/mis-parsed entries eliminated)
+- QID 00004334 now maps to `3.1.1(c)` as expected
+
+**Steps applied:**
+1. Fixed regex in `backend/manual_parser.py` line 27
+2. Rebuilt backend Docker container
+3. Restarted container with `docker-compose -f docker-compose.windows.yml up -d backend`
+4. Re-parsed GMM manual via `POST /api/manuals/<id>/reparse`
+5. Verified MAP output shows correct subsection numbers

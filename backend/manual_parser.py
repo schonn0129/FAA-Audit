@@ -23,7 +23,8 @@ SECTION_PATTERNS = [
     # Section with label: "SECTION 6.4.1", "Section 5.2"
     re.compile(r'^(SECTION|Section)\s+(\d+(?:\.\d+){0,4})\b\.?\s*(.*)$'),
     # Numbered section with title: "6.4.1 AD Management Process"
-    re.compile(r'^(\d+(?:\.\d+){1,4})\s*[-–—:]?\s*(.+)$'),
+    # Title must start with a letter to avoid capturing trailing ".N" as title
+    re.compile(r'^(\d+(?:\.\d+){1,4})\s*[-–—:]?\s*([A-Za-z].*)$'),
     # Numbered section alone on line: "6.4.1" or "6.4.1."
     re.compile(r'^(\d+(?:\.\d+){1,4})\.?\s*$'),
 ]
