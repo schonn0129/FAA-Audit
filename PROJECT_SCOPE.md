@@ -332,7 +332,11 @@ A quality manager can hand this package to a PMI and say:
 - React frontend with full navigation
 
 ### 🔨 In Progress
-- None currently
+- MAP mapping accuracy refinement (section parsing, keyword tuning, topic exclusions)
+
+### 📋 Backlog
+- Manual deletion/replacement workflow (ability to remove uploaded manuals)
+- Phase 1 unchecked item: Flag ambiguous questions for human review
 
 ### ❌ Not Started
 - Phase 8: Mapping Memory (Reference Learning)
@@ -342,35 +346,23 @@ A quality manager can hand this package to a PMI and say:
 
 ## Next Steps
 
-1. **Define Ownership Rules**
-   - Document keyword patterns for each function
-   - Map all relevant CFR sections to functions
-   - Define AIP/GMM lookup strategy
+1. **Finalize MAP Mapping Accuracy**
+   - Continue tuning section parsing, keyword matching, and topic exclusions
+   - Spot-check additional QIDs against known-correct manual references
+   - Verify subsection-level precision across all chapters
 
-2. **Build Ownership Assignment Engine**
-   - Implement rules-based decision tree
-   - Add confidence scoring
-   - Create ownership table data structure
+2. **Manual Management Improvements**
+   - Add ability to delete/replace uploaded manuals
+   - Consider manual versioning workflow
 
-3. **Develop Scoping Interface**
-   - UI for function selection
-   - In-scope vs. deferred tracking
-   - Coverage metrics
+3. **Phase 8: Mapping Memory**
+   - Element finalization workflow
+   - Persist approved references for reuse across audits
 
-4. **Implement MAP Generation**
-   - Excel export functionality
-   - Reference pre-population
-   - Evidence guidance
-
-5. **Build Dashboard**
-   - Visual analytics
-   - Risk indicators
-   - Executive summary
-
-6. **PDF Assembly**
-   - Complete compliance package generation
-   - All required sections
-   - PMI-ready format
+4. **Phase 9: Gap Analysis**
+   - GMM structure validation
+   - AIP Chapters 1-2 analysis
+   - Regulatory vs. guidance gap detection
 
 ---
 
@@ -409,10 +401,15 @@ FAA-Audit/
 │       │       └── index.js
 │       └── services/
 │           └── api.js         # ✅ Full API integration
-├── PROJECT_SCOPE.md           # This file
+├── docker-compose.yml             # Synology NAS deployment
+├── docker-compose.windows.yml     # Windows Docker Desktop deployment
+├── docker-start.ps1               # Windows management script
+├── PROJECT_SCOPE.md               # This file
 ├── README.md
 ├── DEVELOPMENT.md
-└── SETUP.md
+├── SETUP.md
+├── WINDOWS_SETUP.md
+└── TROUBLESHOOTING.md
 ```
 
 ---
@@ -427,8 +424,9 @@ FAA-Audit/
 
 ## Version Control
 
-- **Document Version:** 1.2
-- **Last Updated:** 2026-01-28
+- **Document Version:** 1.3
+- **Last Updated:** 2026-02-09
 - **DCT Version:** ED 4.2.1 (Version 29) — 44 questions (note: other DCTs will have different question counts)
 - **AIP Version:** TBD (specify when implementing)
-- **GMM Version:** TBD (specify when implementing)
+- **GMM Version:** Revision 4 (470 pages, 2502 sections parsed)
+- **Deployment:** Windows Docker Desktop (migrated from Synology NAS on 2026-02-08)
