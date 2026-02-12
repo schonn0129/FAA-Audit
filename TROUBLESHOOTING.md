@@ -645,3 +645,71 @@ healthcheck:
 **Current status:**
 - Precision improved and noise reduced.
 - Some 4.2.1 QIDs still need refinement for subsection-level accuracy.
+
+---
+
+## Session Log: 2026-02-12 (Evening)
+
+### Issue: QID 00004724 (4.2.3) mapping to GMM 5.2.1(I) instead of 6.4.1
+
+**Problem:** QID 00004724 asks: "Does the certificate holder have a method to ensure that aircraft which do not meet the requirements of an applicable AD are not operated?" — a clear AD management question. The MAP returned safety-domain sections (9.7.1, 8.1.4, 12.6.5, 3.3.3) instead of the correct AD management section 6.4.1. This is a cross-domain false-match problem that affects all regimes, not just AD.
+
+**Root Cause Analysis:**
+
+1. **Token overlap uncapped** — Generic tokens like "procedure", "method", "equipment", "operate" contributed 1.0 each with no ceiling, allowing wrong-domain sections with 10-15 generic overlaps to score above MIN_SCORE.
+
+2. **TOPIC_EXCLUSIONS too narrow** — AD management only excluded `mel`, `transponder`, `moc`. Sections about `inspection program`, `maintenance planning`, and `safety` were NOT excluded, so no -14.0 penalty applied.
+
+3. **TOPIC_MISMATCH_PENALTY too small** — At 2.0, it couldn't counteract even modest keyword overlap from wrong-domain sections.
+
+4. **False "safety" topic detection** — The bare word "safety" in TOPIC_TRIGGERS matched DCT metadata text "Safety Attribute: Procedures" (a DCT label, not safety management content), causing safety sections to get topic-match bonuses instead of exclusion penalties.
+
+5. **Missing AD topic triggers** — "applicable AD", "requirements of an AD", "ad tracking", "ad status" etc. were not in the ad management topic triggers, so the question wasn't detected as AD-related.
+
+**Fixes Implemented (in `backend/manual_mapper.py`):**
+
+1. **Token overlap cap with diminishing returns**
+   - New constants: `TOKEN_OVERLAP_CAP = 8.0`, `TOKEN_OVERLAP_DIMINISHING_THRESHOLD = 5`
+   - First 5 overlapping tokens: 1.0 each. Tokens 6+: 0.25 each. Max 8.0 total.
+   - Prevents generic keyword floods from dominating scoring.
+
+2. **Expanded TOPIC_EXCLUSIONS to full cross-domain matrix**
+   - Grew from 5 entries to 11 entries covering all domain pairs.
+   - AD management now excludes: mel, transponder, moc, inspection program, maintenance planning, safety.
+   - Each domain excludes unrelated domains. "audit" has no exclusions (can reference any domain).
+
+3. **Increased TOPIC_MISMATCH_PENALTY from 2.0 to 5.0**
+   - Cross-domain sections now face meaningful scoring penalty.
+
+4. **Graduated weak token penalty**
+   - Expanded WEAK_TOKENS from 11 to 21 terms (added: system, personnel, training, documentation, applicable, operations, responsibility, determine, necessary, required).
+   - New `WEAK_TOKEN_RATIO_THRESHOLD = 0.6` — when 60%+ of overlap tokens are weak, applies scaled penalty.
+   - Catches high-volume generic overlaps the old all-or-nothing check missed.
+
+5. **No-signal score ceiling (intent-priority enforcement)**
+   - New `NO_SIGNAL_SCORE_CEILING = 6.0` — when question has clear intents but section matches NONE and has no topic overlap, score capped at 6.0.
+   - Makes intent the deciding factor; correct sections with intent matches (+6.0 each) always win.
+
+6. **Fixed false "safety" topic trigger**
+   - Removed bare "safety" from TOPIC_TRIGGERS; now requires specific compound phrases: "safety management system", "safety management", "safety program", "sms", etc.
+   - Prevents DCT metadata like "Safety Attribute: Procedures" from triggering safety topic.
+
+7. **Expanded AD management topic triggers**
+   - Added: "applicable ad", "requirements of an ad", "requirements of an applicable ad", "ad are not operated", "ad is not operated", "ad tracking", "ad status", "ad applicability", "ad handling".
+
+8. **Added diagnostic signals for debug output**
+   - `no_signal_cap_applied`, `overlap_capped`, `raw_overlap_count`, `weak_token_ratio` visible in `?debug=1`.
+
+**Status:** Code changes implemented locally. Docker container rebuild required to deploy.
+
+**To apply changes:**
+```bash
+docker-compose -f docker-compose.windows.yml build backend
+docker-compose -f docker-compose.windows.yml up -d backend
+```
+
+**Verification needed after rebuild:**
+1. QID 00004724 (4.2.3): Should map to GMM 6.4.1, NOT 9.7.1/8.1.4/5.2.1
+2. QID 00049439 (4.2.3): Should continue mapping to 6.4.3
+3. QID 00004334 (4.2.1): Should continue mapping to 3.1.1(c)
+4. Spot-check 10+ QIDs across 4.2.1 and 4.2.3 for regressions

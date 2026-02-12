@@ -77,10 +77,42 @@ Work included scoring refactor, candidate filtering, validation on live API, and
 
 ---
 
+## Evening Session: Intent-First Scoring Structural Fix
+
+### Problem Investigated
+QID 00004724 (DCT 4.2.3) — "Does the certificate holder have a method to ensure that aircraft which do not meet the requirements of an applicable AD are not operated?" — was mapping to GMM 9.7.1(i), 8.1.4(i), 12.6.5(i), 3.3.3(b) instead of the correct **GMM 6.4.1**.
+
+### Root Causes Found
+1. Token overlap uncapped — generic tokens flooding scores
+2. TOPIC_EXCLUSIONS too narrow — safety/inspection sections not excluded for AD questions
+3. TOPIC_MISMATCH_PENALTY too small (2.0) to counteract keyword overlap
+4. Bare "safety" in TOPIC_TRIGGERS matching DCT metadata "Safety Attribute: Procedures"
+5. Missing AD topic triggers for phrases like "applicable AD", "ad tracking", etc.
+
+### Code Changes (all in `backend/manual_mapper.py`)
+1. **Token overlap cap**: Diminishing returns after 5 tokens, max 8.0
+2. **Expanded TOPIC_EXCLUSIONS**: 5 → 11 entries, full cross-domain matrix
+3. **TOPIC_MISMATCH_PENALTY**: 2.0 → 5.0
+4. **Graduated weak token penalty**: Fires when 60%+ of overlap is weak tokens
+5. **No-signal score ceiling (6.0)**: Caps sections with no intent/topic match
+6. **Fixed safety topic triggers**: Removed bare "safety", requires compound phrases
+7. **Expanded AD topic triggers**: Added "applicable ad", "ad tracking", "ad status", etc.
+8. **Diagnostic signals**: overlap_capped, no_signal_cap_applied, weak_token_ratio in debug
+
+### Validation
+- Debug API confirmed QID 00004724 was matching safety-domain sections due to false topic detection
+- QID 00004724 is in DCT 4.2.3 (audit `4a32641e-f5fc-40b6-88f7-a9c0fa93b780`), not 4.2.1
+- **Docker rebuild required** — code changes are local only, container still running old code
+
+---
+
 ## Next Steps
-1. Build a scored regression set for 4.2.1 + 4.2.3 (top-1/top-3 correctness).
-2. Add intent-specific penalties/bonuses for remaining failure classes:
+1. **Rebuild Docker backend** and verify QID 00004724 maps to GMM 6.4.1.
+2. **Regression check**: QID 00049439 → 6.4.3, QID 00004334 → 3.1.1(c).
+3. **Broad validation**: Spot-check 10+ QIDs across 4.2.1 and 4.2.3 for regressions.
+4. Build scored regression set for top-1/top-3 correctness.
+5. Add intent-specific penalties/bonuses for remaining failure classes:
    - CAMP procedural control
    - Data documentation/substantiation
    - Method-of-performance questions
-3. Add an optional debug export endpoint/report for rapid human review of candidate ranking.
+6. Add optional debug export endpoint/report for rapid human review.

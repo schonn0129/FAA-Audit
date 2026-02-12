@@ -35,6 +35,8 @@ MIN_SCORE = 2.0
 MAX_SUGGESTIONS_PER_MANUAL = 4
 FOLLOW_ON_SCORE_DELTA = 0.75
 STRONG_SIGNAL_SCORE_DELTA = 2.0
+TOKEN_OVERLAP_CAP = 8.0
+TOKEN_OVERLAP_DIMINISHING_THRESHOLD = 5
 PARAGRAPH_MARKER_PAREN_PATTERN = re.compile(r"(?<![A-Za-z0-9])\((?P<label>[a-z0-9]{1,3})\)\s+(?=[A-Z])")
 PARAGRAPH_MARKER_LETTER_DOT = re.compile(r"(?<!\w)(?P<label>[a-z])\.\s+(?=[A-Z])")
 PARAGRAPH_MARKER_LETTER_PAREN = re.compile(r"(?<!\w)(?P<label>[a-z])\)\s+(?=[A-Z])")
@@ -50,10 +52,13 @@ GENERIC_SECTION_TITLES = {
 
 WEAK_TOKENS = {
     "equipment", "method", "procedures", "procedure", "program", "process",
-    "resources", "capabilities", "appropriate", "ensure", "ensures"
+    "resources", "capabilities", "appropriate", "ensure", "ensures",
+    "system", "personnel", "training", "documentation", "applicable",
+    "operations", "responsibility", "determine", "necessary", "required"
 }
 WEAK_TOKEN_PENALTY = 3.0
 WEAK_TOKEN_MIN_OVERLAP = 3
+WEAK_TOKEN_RATIO_THRESHOLD = 0.6
 
 PROHIBITION_PATTERNS = [
     re.compile(r"\bdo\s+not\s+operate\b", re.IGNORECASE),
@@ -244,7 +249,9 @@ SYNONYM_PHRASE_GROUPS = {
 
 TOPIC_TRIGGERS = {
     "ad management": [
-        "ad management", "airworthiness directive", "airworthiness directives", "ad process", "ad compliance", "amoc"
+        "ad management", "airworthiness directive", "airworthiness directives", "ad process", "ad compliance", "amoc",
+        "applicable ad", "requirements of an ad", "requirements of an applicable ad", "ad are not operated",
+        "ad is not operated", "ad tracking", "ad status", "ad applicability", "ad handling"
     ],
     "ad measurement": [
         "process measurement", "method of auditing", "audit", "auditing",
@@ -265,9 +272,9 @@ TOPIC_TRIGGERS = {
         "audit", "auditing", "audit program", "compliance monitoring", "quality assurance"
     ],
     "safety": [
-        "safety", "sms", "safety management system", "safety risk management",
+        "sms", "safety management system", "safety risk management",
         "safety assurance", "safety policy", "safety promotion", "hazard reporting",
-        "safety reporting", "risk assessment"
+        "safety reporting", "risk assessment", "safety management", "safety program"
     ],
     "maintenance planning": [
         "maintenance planning", "maintenance plan", "scheduled maintenance",
@@ -295,11 +302,17 @@ TOPIC_TRIGGERS = {
 # Topic exclusions: when question is about topic X, penalize sections about topic Y
 # Format: { question_topic: [excluded_section_topics] }
 TOPIC_EXCLUSIONS = {
-    "ad management": ["mel", "transponder", "moc"],
-    "mel": ["ad management"],
-    "transponder": ["ad management"],
-    "inspection program": ["mel", "transponder"],
-    "maintenance program": ["transponder"],
+    "ad management": ["mel", "transponder", "moc", "inspection program", "maintenance planning", "safety"],
+    "mel": ["ad management", "inspection program", "safety"],
+    "transponder": ["ad management", "mel", "inspection program", "safety"],
+    "inspection program": ["mel", "transponder", "ad management", "moc", "safety"],
+    "maintenance program": ["transponder", "mel", "ad management", "safety"],
+    "maintenance planning": ["ad management", "mel", "transponder", "safety"],
+    "safety": ["ad management", "mel", "transponder"],
+    "moc": ["ad management", "inspection program", "safety"],
+    "records": ["mel", "transponder", "moc", "safety"],
+    "aircraft records": ["mel", "transponder", "moc", "safety"],
+    "audit": [],  # Audit/measurement can reference any domain
 }
 
 # Penalty applied when a section matches an excluded topic
@@ -386,8 +399,9 @@ INTENT_MISMATCH_PENALTY = 3.0
 INTENT_NO_OVERLAP_PENALTY = 4.0
 MEASUREMENT_MISMATCH_PENALTY = 6.0
 TOPIC_MATCH_BONUS = 2.0
-TOPIC_MISMATCH_PENALTY = 2.0
+TOPIC_MISMATCH_PENALTY = 5.0
 INTENT_TOPIC_COUPLED_BONUS = 1.0
+NO_SIGNAL_SCORE_CEILING = 6.0
 GENERIC_CHAPTER_PENALTY = 6.0
 
 
@@ -662,7 +676,14 @@ def _score_section_segment(question_tokens: set, question_cfrs: set, question_ph
     cfr_score = len(cfr_matches) * 5.0
 
     overlap = question_tokens.intersection(section_tokens)
-    overlap_score = float(len(overlap))
+    raw_overlap_count = len(overlap)
+    if raw_overlap_count <= TOKEN_OVERLAP_DIMINISHING_THRESHOLD:
+        overlap_score = float(raw_overlap_count)
+    else:
+        overlap_score = float(TOKEN_OVERLAP_DIMINISHING_THRESHOLD) + (
+            (raw_overlap_count - TOKEN_OVERLAP_DIMINISHING_THRESHOLD) * 0.25
+        )
+    overlap_score = min(overlap_score, TOKEN_OVERLAP_CAP)
 
     phrase_hits = []
     section_text_lower = (title_text + " " + (segment_text or "")).lower()
@@ -736,8 +757,24 @@ def _score_section_segment(question_tokens: set, question_cfrs: set, question_ph
     if title_lower.strip() in GENERIC_SECTION_TITLES:
         score -= 2.0
     # Penalize matches that only hit vague/generic tokens.
-    if overlap and overlap.issubset(WEAK_TOKENS) and len(overlap) <= WEAK_TOKEN_MIN_OVERLAP:
-        score -= WEAK_TOKEN_PENALTY
+    weak_in_overlap = set()
+    weak_ratio = 0.0
+    if overlap:
+        weak_in_overlap = overlap.intersection(WEAK_TOKENS)
+        weak_ratio = len(weak_in_overlap) / len(overlap)
+        if overlap.issubset(WEAK_TOKENS) and len(overlap) <= WEAK_TOKEN_MIN_OVERLAP:
+            score -= WEAK_TOKEN_PENALTY
+        elif weak_ratio >= WEAK_TOKEN_RATIO_THRESHOLD and len(overlap) > WEAK_TOKEN_MIN_OVERLAP:
+            score -= WEAK_TOKEN_PENALTY * weak_ratio
+
+    # Intent-priority enforcement: when question has clear intents but section
+    # shares NONE of them and has no topic overlap, cap the score to prevent
+    # token-only matches from surfacing above intent-matched sections.
+    no_signal_cap_applied = False
+    if question_intents and not intent_overlap and not topic_overlap:
+        if score > NO_SIGNAL_SCORE_CEILING:
+            score = NO_SIGNAL_SCORE_CEILING
+            no_signal_cap_applied = True
 
     signals = {
         "cfr_matches": sorted(cfr_matches),
@@ -752,6 +789,13 @@ def _score_section_segment(question_tokens: set, question_cfrs: set, question_ph
         signals["topic_hits"] = topic_overlap
     if generic_chapter_penalty:
         signals["generic_chapter_penalty"] = True
+    if no_signal_cap_applied:
+        signals["no_signal_cap_applied"] = True
+    if raw_overlap_count > TOKEN_OVERLAP_DIMINISHING_THRESHOLD:
+        signals["raw_overlap_count"] = raw_overlap_count
+        signals["overlap_capped"] = True
+    if weak_ratio >= WEAK_TOKEN_RATIO_THRESHOLD and weak_in_overlap:
+        signals["weak_token_ratio"] = round(weak_ratio, 2)
 
     return score, signals
 
