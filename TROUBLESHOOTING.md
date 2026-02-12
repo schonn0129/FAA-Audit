@@ -580,3 +580,68 @@ re.compile(r'^(\d+(?:\.\d+){1,4})\s*[-–—:]?\s*([A-Za-z].*)$')
 3. Restarted container with `docker-compose -f docker-compose.windows.yml up -d backend`
 4. Re-parsed GMM manual via `POST /api/manuals/<id>/reparse`
 5. Verified MAP output shows correct subsection numbers
+
+---
+
+## Backend Shows `unhealthy` in Docker Desktop
+
+### Symptom
+`faa-audit-backend` is running and API requests work, but container health status remains `unhealthy`.
+
+### Root Cause
+`docker-compose.windows.yml` healthcheck uses `curl`:
+
+```yaml
+healthcheck:
+  test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+```
+
+The backend image does not include `curl`, so healthcheck fails with:
+
+```text
+exec: "curl": executable file not found in $PATH
+```
+
+### Verification
+- `GET /api/health` returns `{"status":"ok", ...}` from host.
+- `docker inspect faa-audit-backend` shows repeated healthcheck failures caused by missing `curl`.
+
+### Fix Options
+1. Install `curl` in backend image.
+2. Replace healthcheck command with Python:
+
+```yaml
+healthcheck:
+  test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health', timeout=5)"]
+```
+
+---
+
+## Session Log: 2026-02-12
+
+### Issue: MAP intent matching too noisy across DCTs
+
+**Problem:** Mapping logic was overfitting to AD-specific patterns and returning broad/noisy links for multiple 4.2.1 maintenance/inspection QIDs.
+
+**Fixes implemented:**
+1. Added generalized intent-aware scoring for mapping:
+   - Added intent classes for `responsibility`, `method`, `data_control`, `standards`, `provisioning`, and `distribution`.
+   - Improved intent/topic signal handling and exclusion penalties.
+2. Removed brittle chapter-specific ranking behavior and shifted toward intent/topic evidence.
+3. Added follow-on suggestion filtering:
+   - Keep top anchor match.
+   - Keep additional links only when score-close or strongly supported.
+   - De-duplicate subsection variants.
+4. Fixed semantic-path suggestion cap bug where too many references could appear.
+5. Updated MAP manual metadata:
+   - `manuals_used` now reports exact manuals used for scoring (not simply latest by type).
+
+**Validation highlights (live API):**
+- QID `00004334` now returns only:
+  - `3.1.1(c)` (semantic true/false)
+- QID `00049439` (4.2.3 AD management) now anchors on:
+  - `6.4.3`
+
+**Current status:**
+- Precision improved and noise reduced.
+- Some 4.2.1 QIDs still need refinement for subsection-level accuracy.

@@ -67,15 +67,18 @@ def _extract_other_manual_refs(links: List[Dict[str, Any]], excluded_types: List
     return "; ".join(refs)
 
 
-def _get_latest_manuals(session) -> List[Dict[str, Any]]:
-    """Return latest manual per type for banner display."""
-    manuals = session.query(Manual).order_by(Manual.upload_date.desc()).all()
-    latest_by_type = {}
-    for manual in manuals:
-        if manual.manual_type not in latest_by_type:
-            latest_by_type[manual.manual_type] = manual
+def _get_manuals_by_ids(session, manual_ids: List[str]) -> List[Dict[str, Any]]:
+    """Return manual metadata for the exact manual IDs used during MAP generation."""
+    if not manual_ids:
+        return []
 
-    return [m.to_dict() for m in latest_by_type.values()]
+    manuals = (
+        session.query(Manual)
+        .filter(Manual.id.in_(manual_ids))
+        .all()
+    )
+    manuals.sort(key=lambda m: (m.manual_type or "", m.filename or ""))
+    return [m.to_dict() for m in manuals]
 
 
 def build_map_rows(
@@ -128,6 +131,11 @@ def build_map_rows(
         except Exception as e:
             logger.error(f"Failed to load manual sections: {e}", exc_info=True)
             raise
+        manuals_used_ids = sorted({
+            sections[0].manual_id
+            for sections in sections_by_type.values()
+            if sections and sections[0].manual_id
+        })
         rows: List[Dict[str, Any]] = []
         not_applicable_count = 0
         for question, assignment, applicability in query.all():
@@ -223,7 +231,7 @@ def build_map_rows(
                     debug_links.append(debug_info)
                 row["auto_suggestions_debug"] = debug_links
             rows.append(row)
-        manuals_used = _get_latest_manuals(session)
+        manuals_used = _get_manuals_by_ids(session, manuals_used_ids)
 
     return rows, in_scope_functions, manuals_used, not_applicable_count
 

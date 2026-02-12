@@ -33,6 +33,8 @@ STOPWORDS = {
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]{3,}")
 MIN_SCORE = 2.0
 MAX_SUGGESTIONS_PER_MANUAL = 4
+FOLLOW_ON_SCORE_DELTA = 0.75
+STRONG_SIGNAL_SCORE_DELTA = 2.0
 PARAGRAPH_MARKER_PAREN_PATTERN = re.compile(r"(?<![A-Za-z0-9])\((?P<label>[a-z0-9]{1,3})\)\s+(?=[A-Z])")
 PARAGRAPH_MARKER_LETTER_DOT = re.compile(r"(?<!\w)(?P<label>[a-z])\.\s+(?=[A-Z])")
 PARAGRAPH_MARKER_LETTER_PAREN = re.compile(r"(?<!\w)(?P<label>[a-z])\)\s+(?=[A-Z])")
@@ -79,6 +81,10 @@ PHRASE_WEIGHTS = {
     "airworthiness directive": 5.0,
     "ad management": 5.0,
     "ad management process": 6.0,
+    "ad handling": 5.0,
+    "handling distribution": 5.0,
+    "receipt and distribution": 5.0,
+    "distribution of ads": 5.0,
     "ad compliance": 5.0,
     "ad tracking": 4.0,
     "ad status": 4.0,
@@ -163,9 +169,14 @@ SYNONYM_PHRASE_GROUPS = {
     ],
     "ad management": [
         "ad management process",
-        "ad process measurement",
         "airworthiness directives management process",
         "airworthiness directive management process"
+    ],
+    "ad measurement": [
+        "ad process measurement",
+        "method of auditing",
+        "audit procedures",
+        "compliance verification"
     ],
     "inspection program": [
         "inspection program",
@@ -228,21 +239,16 @@ SYNONYM_PHRASE_GROUPS = {
         "deferral",
         "mel",
         "cda"
-    ],
-    "aircraft records": [
-        "aircraft records",
-        "logbook",
-        "log book",
-        "record keeping",
-        "records retention",
-        "time since new",
-        "time since overhaul"
     ]
 }
 
 TOPIC_TRIGGERS = {
     "ad management": [
         "ad management", "airworthiness directive", "airworthiness directives", "ad process", "ad compliance", "amoc"
+    ],
+    "ad measurement": [
+        "process measurement", "method of auditing", "audit", "auditing",
+        "verify", "validate", "compliance verification"
     ],
     "inspection program": [
         "inspection program", "inspection schedule", "inspection requirements", "inspection intervals",
@@ -297,7 +303,7 @@ TOPIC_EXCLUSIONS = {
 }
 
 # Penalty applied when a section matches an excluded topic
-TOPIC_EXCLUSION_PENALTY = 8.0
+TOPIC_EXCLUSION_PENALTY = 14.0
 
 NORMALIZE_TOKEN_MAP = {
     "operated": "operate",
@@ -307,6 +313,82 @@ NORMALIZE_TOKEN_MAP = {
     "requirements": "requirement",
     "responsibilities": "responsibility"
 }
+
+QUESTION_INTENT_PATTERNS = {
+    "provisioning": [
+        "provisioning process"
+    ],
+    "distribution": [
+        "handling/distribution", "receipt and distribution", "distribution of ad",
+        "distribution of ads", "handling", "distribution", "receipt", "distribute",
+        "notification", "notify", "dissemination"
+    ],
+    "responsibility": [
+        "responsibility", "authority", "accountable", "who is responsible", "designated",
+        "certificate holder is responsible", "primarily responsible", "make arrangements with another person",
+        "other persons to perform"
+    ],
+    "method": [
+        "method of performing", "routine and nonroutine maintenance", "routine and non-routine maintenance",
+        "method", "techniques", "practices acceptable"
+    ],
+    "data_control": [
+        "developing, substantiating, and documenting", "developing substantiating and documenting",
+        "substantiating", "documenting maintenance", "alteration data"
+    ],
+    "standards": [
+        "instructions and procedures", "procedures, standards, responsibilities, and authority",
+        "standards", "inspection personnel"
+    ],
+    "records": [
+        "record keeping", "recordkeeping", "records retention", "logbook", "log book"
+    ],
+    "measurement": [
+        "process measurement", "method of auditing", "audit", "auditing",
+        "verify", "validate", "compliance verification", "effectiveness"
+    ],
+    "identification": [
+        "document identification", "identify", "identification"
+    ],
+    "execution": [
+        "compliance procedure", "accomplishment", "implement", "implementation"
+    ],
+}
+
+SECTION_INTENT_PATTERNS = {
+    "provisioning": [
+        "handling/distribution", "receipt and distribution", "distribution of ad",
+        "distribution of ads", "ad handling"
+    ],
+    "distribution": [
+        "handling/distribution", "receipt and distribution", "distribution of ad",
+        "distribution of ads", "handling", "notification", "notify"
+    ],
+    "responsibility": ["responsibility", "authority", "accountable", "designated"],
+    "method": [
+        "method of performing", "routine and nonroutine", "routine and non-routine",
+        "methods", "techniques", "practices acceptable"
+    ],
+    "data_control": [
+        "developing", "substantiating", "documenting", "alteration data", "maintenance data"
+    ],
+    "standards": [
+        "instructions and procedures", "standards", "inspection personnel", "authority of inspection personnel"
+    ],
+    "records": ["record keeping", "recordkeeping", "records", "logbook", "log book"],
+    "measurement": ["measurement", "audit", "verify", "validate", "monitoring"],
+    "identification": ["identification", "identify"],
+    "execution": ["compliance procedure", "accomplishment", "implementation"],
+}
+
+INTENT_MATCH_BONUS = 6.0
+INTENT_MISMATCH_PENALTY = 3.0
+INTENT_NO_OVERLAP_PENALTY = 4.0
+MEASUREMENT_MISMATCH_PENALTY = 6.0
+TOPIC_MATCH_BONUS = 2.0
+TOPIC_MISMATCH_PENALTY = 2.0
+INTENT_TOPIC_COUPLED_BONUS = 1.0
+GENERIC_CHAPTER_PENALTY = 6.0
 
 
 def _tokenize(text: str) -> List[str]:
@@ -381,7 +463,7 @@ def _expand_tokens(base_tokens: set, full_text: str) -> Tuple[set, List[str]]:
     text = (full_text or "").lower()
 
     if "ad management" in text or "airworthiness directives" in text:
-        expanded.update({"management", "process", "audit", "auditing", "compliance"})
+        expanded.update({"management", "process", "compliance"})
         phrases.extend(["ad management", "ad management process", "airworthiness directives"])
 
     if "audit" in text or "auditing" in text:
@@ -392,7 +474,38 @@ def _expand_tokens(base_tokens: set, full_text: str) -> Tuple[set, List[str]]:
         expanded.update({"conformance", "verification"})
         phrases.extend(SYNONYM_PHRASE_GROUPS.get("compliance", []))
 
+    if "provisioning process" in text:
+        expanded.update({"handling", "distribution", "receipt", "notification"})
+        phrases.extend(["handling distribution", "receipt and distribution", "ad handling"])
+
     return expanded, phrases
+
+
+def _detect_intents(text: str, patterns: Dict[str, List[str]]) -> set:
+    text_lower = (text or "").lower()
+    intents = set()
+    for intent, triggers in patterns.items():
+        for trigger in triggers:
+            if _trigger_matches(text_lower, trigger):
+                intents.add(intent)
+                break
+    return intents
+
+
+def _trigger_matches(text: str, trigger: str) -> bool:
+    if not text or not trigger:
+        return False
+    pattern = re.compile(
+        r"(?<![A-Za-z0-9])" + re.escape(trigger.lower()) + r"(?![A-Za-z0-9])"
+    )
+    return bool(pattern.search(text.lower()))
+
+
+def _question_has_measurement_intent(tokens: set, full_text: str) -> bool:
+    text = (full_text or "").lower()
+    if "measurement" in text or "method of auditing" in text:
+        return True
+    return bool({"audit", "auditing", "verify", "validate", "monitoring"}.intersection(tokens))
 
 
 def _build_question_context(question: Question) -> Tuple[set, List[str]]:
@@ -423,19 +536,21 @@ def _build_question_context(question: Question) -> Tuple[set, List[str]]:
     tokens, extra_phrases = _expand_tokens(tokens, full_text)
 
     phrases = set(ref_context.get("phrases", []))
+    has_measurement_intent = _question_has_measurement_intent(tokens, full_text)
     for phrase in extra_phrases:
         phrases.add(phrase.lower())
     # If a topic is detected, expand only that topic's phrases (keeps mapping contextual).
     detected_topics = set()
     full_text_lower = full_text.lower()
-    token_text = " ".join(sorted(tokens))
     for topic, triggers in TOPIC_TRIGGERS.items():
         for trigger in triggers:
-            if trigger in full_text_lower or trigger in token_text:
+            if _trigger_matches(full_text_lower, trigger):
                 detected_topics.add(topic)
                 break
     for topic in detected_topics:
         for phrase in SYNONYM_PHRASE_GROUPS.get(topic, []):
+            if topic == "ad measurement" and not has_measurement_intent:
+                continue
             phrases.add(phrase)
     # Always include compliance phrases if compliance is explicit.
     if "compliance" in tokens:
@@ -455,11 +570,10 @@ def _detect_question_topics(tokens: set, full_text: str) -> List[str]:
     """
     detected: List[str] = []
     text_lower = full_text.lower()
-    token_text = " ".join(sorted(tokens))
 
     for topic, triggers in TOPIC_TRIGGERS.items():
         for trigger in triggers:
-            if trigger in text_lower or trigger in token_text:
+            if _trigger_matches(text_lower, trigger):
                 detected.append(topic)
                 break
 
@@ -485,11 +599,38 @@ def _section_matches_excluded_topic(section_text: str, section_title: str,
         for excluded_topic in excluded_topics:
             triggers = TOPIC_TRIGGERS.get(excluded_topic, [])
             for trigger in triggers:
-                if trigger in combined_text:
+                if _trigger_matches(combined_text, trigger):
                     matched_exclusions.append(excluded_topic)
                     break
 
     return len(matched_exclusions) > 0, list(set(matched_exclusions))
+
+
+def _section_has_ad_context(section_text: str, section_title: str) -> bool:
+    combined = f"{section_title} {section_text}".lower()
+    if "airworthiness directive" in combined or "airworthiness directives" in combined:
+        return True
+    # Ignore ADS-B/transponder context; we want AD management context.
+    scrubbed = combined.replace("ads-b", " ").replace("adsb", " ")
+    if re.search(r"\bad\s+(management|compliance|process|checklist|handling|record|status|applicability)\b", scrubbed):
+        return True
+    return bool(
+        re.search(
+            r"\bads?\s+(received|issued|recorded|requiring|compliance|checklist|process|management|handling|distribution)\b",
+            scrubbed
+        )
+    )
+
+
+def _detect_section_topics(section_text: str, section_title: str) -> set:
+    combined = f"{section_title} {section_text}".lower()
+    matched = set()
+    for topic, triggers in TOPIC_TRIGGERS.items():
+        for trigger in triggers:
+            if _trigger_matches(combined, trigger):
+                matched.add(topic)
+                break
+    return matched
 
 
 def _question_has_prohibition_intent(tokens: set, full_text: str) -> bool:
@@ -506,9 +647,16 @@ def _question_has_prohibition_intent(tokens: set, full_text: str) -> bool:
 def _score_section_segment(question_tokens: set, question_cfrs: set, question_phrases: List[str],
                            section_title: str, segment_text: str,
                            section: ManualSection, allow_prohibition: bool = True,
-                           question_topics: List[str] = None) -> Tuple[float, Dict[str, Any]]:
+                           question_topics: List[str] = None,
+                           question_intents: Optional[set] = None,
+                           section_topics: Optional[set] = None) -> Tuple[float, Dict[str, Any]]:
     title_text = (section_title or "")
     section_tokens = set(_tokenize(title_text + " " + (segment_text or "")))
+    section_intents = _detect_intents(
+        f"{title_text} {(segment_text or '')}",
+        SECTION_INTENT_PATTERNS
+    )
+    question_intents = question_intents or set()
 
     cfr_matches = question_cfrs.intersection(set(section.cfr_citations or []))
     cfr_score = len(cfr_matches) * 5.0
@@ -556,6 +704,35 @@ def _score_section_segment(question_tokens: set, question_cfrs: set, question_ph
                 break
 
     score = cfr_score + overlap_score + phrase_score + prohibition_bonus + title_bonus
+    intent_overlap = sorted(question_intents.intersection(section_intents))
+    if intent_overlap:
+        score += INTENT_MATCH_BONUS * len(intent_overlap)
+    elif question_intents:
+        score -= INTENT_NO_OVERLAP_PENALTY
+        if section_intents:
+            score -= INTENT_MISMATCH_PENALTY
+    # Penalize measurement-focused sections unless question clearly asks for measurement/auditing.
+    if "measurement" in section_intents and "measurement" not in question_intents:
+        score -= MEASUREMENT_MISMATCH_PENALTY
+    q_topics = set(question_topics or [])
+    s_topics = set(section_topics or [])
+    topic_overlap = sorted(q_topics.intersection(s_topics))
+    if topic_overlap:
+        score += TOPIC_MATCH_BONUS * len(topic_overlap)
+    elif q_topics and s_topics:
+        score -= TOPIC_MISMATCH_PENALTY
+    if intent_overlap and topic_overlap:
+        score += INTENT_TOPIC_COUPLED_BONUS
+    generic_chapter_penalty = False
+    section_number = (section.section_number or "").strip()
+    if re.fullmatch(r"\d{1,2}", section_number):
+        strong_evidence = bool(
+            cfr_matches or intent_overlap or len(phrase_hits) >= 3
+        )
+        if not strong_evidence:
+            score -= GENERIC_CHAPTER_PENALTY
+            generic_chapter_penalty = True
+
     if title_lower.strip() in GENERIC_SECTION_TITLES:
         score -= 2.0
     # Penalize matches that only hit vague/generic tokens.
@@ -569,8 +746,21 @@ def _score_section_segment(question_tokens: set, question_cfrs: set, question_ph
     }
     if title_bonus_reason:
         signals["title_bonus"] = title_bonus_reason
+    if intent_overlap:
+        signals["intent_hits"] = intent_overlap
+    if topic_overlap:
+        signals["topic_hits"] = topic_overlap
+    if generic_chapter_penalty:
+        signals["generic_chapter_penalty"] = True
 
     return score, signals
+
+
+def _base_section_key(section_number: Optional[str], section_display: str) -> str:
+    if section_number:
+        return section_number.strip().lower()
+    base = (section_display or "").strip().lower()
+    return re.sub(r"\([a-z0-9]{1,3}\)$", "", base)
 
 
 def _rank_sections(question: Question, sections: List[ManualSection]) -> List[Dict[str, Any]]:
@@ -594,6 +784,7 @@ def _rank_sections(question: Question, sections: List[ManualSection]) -> List[Di
 
     # Detect question topics for exclusion filtering
     question_topics = _detect_question_topics(question_tokens, full_text)
+    question_intents = _detect_intents(full_text, QUESTION_INTENT_PATTERNS)
 
     scored: List[Tuple[float, ManualSection, Dict[str, Any], str, List[str]]] = []
 
@@ -608,6 +799,7 @@ def _rank_sections(question: Question, sections: List[ManualSection]) -> List[Di
         is_excluded, excluded_topics = _section_matches_excluded_topic(
             section_text, section_title, question_topics
         )
+        section_topics = _detect_section_topics(section_text, section_title)
 
         for seg in segments:
             score, signals = _score_section_segment(
@@ -618,7 +810,9 @@ def _rank_sections(question: Question, sections: List[ManualSection]) -> List[Di
                 seg.get("text", ""),
                 section,
                 allow_prohibition=allow_prohibition,
-                question_topics=question_topics
+                question_topics=question_topics,
+                question_intents=question_intents,
+                section_topics=section_topics
             )
 
             # Apply topic exclusion penalty
@@ -643,11 +837,27 @@ def _rank_sections(question: Question, sections: List[ManualSection]) -> List[Di
     )
 
     suggestions: List[Dict[str, Any]] = []
-    for score, section, signals, paragraph_label, excluded_topics in scored[:MAX_SUGGESTIONS_PER_MANUAL]:
+    top_score = scored[0][0]
+    seen_base_keys = set()
+    for score, section, signals, paragraph_label, excluded_topics in scored:
+        if suggestions:
+            strong_signals = bool(
+                (signals.get("cfr_matches") or []) or
+                (signals.get("intent_hits") or [])
+            )
+            within_tight_window = score >= (top_score - FOLLOW_ON_SCORE_DELTA)
+            within_strong_window = strong_signals and score >= (top_score - STRONG_SIGNAL_SCORE_DELTA)
+            if not (within_tight_window or within_strong_window):
+                continue
+
         section_number = section.section_number or ""
         section_display = section_number or section.section_title or ""
         if paragraph_label and section_number:
             section_display = f"{section_number}({paragraph_label})"
+        base_key = _base_section_key(section_number, section_display)
+        if base_key in seen_base_keys:
+            continue
+        seen_base_keys.add(base_key)
         suggestion = {
             "manual_id": section.manual_id,
             "manual_type": section.manual.manual_type if section.manual else None,
@@ -663,6 +873,8 @@ def _rank_sections(question: Question, sections: List[ManualSection]) -> List[Di
         if excluded_topics:
             suggestion["excluded_topics"] = excluded_topics
         suggestions.append(suggestion)
+        if len(suggestions) >= MAX_SUGGESTIONS_PER_MANUAL:
+            break
 
     return suggestions
 
@@ -884,6 +1096,7 @@ def suggest_manual_links_enhanced(
 
     # Detect question topics for exclusion filtering
     question_topics = _detect_question_topics(question_tokens, full_text)
+    question_intents = _detect_intents(full_text, QUESTION_INTENT_PATTERNS)
 
     # Score all sections
     all_scored: List[Dict[str, Any]] = []
@@ -901,6 +1114,7 @@ def suggest_manual_links_enhanced(
             is_excluded, excluded_topics = _section_matches_excluded_topic(
                 section_text, section_title, question_topics
             )
+            section_topics = _detect_section_topics(section_text, section_title)
 
             # Compute section embedding (once per section, not per segment)
             try:
@@ -920,7 +1134,9 @@ def suggest_manual_links_enhanced(
                     seg.get("text", ""),
                     section,
                     allow_prohibition=allow_prohibition,
-                    question_topics=question_topics
+                    question_topics=question_topics,
+                    question_intents=question_intents,
+                    section_topics=section_topics
                 )
 
                 # Apply topic exclusion penalty
@@ -971,12 +1187,34 @@ def suggest_manual_links_enhanced(
 
     # Limit to top N per manual type
     by_type: Dict[str, List[Dict[str, Any]]] = {}
+    top_score_by_type: Dict[str, float] = {}
+    seen_base_by_type: Dict[str, set] = {}
     for item in all_scored:
         mtype = item["manual_type"]
         if mtype not in by_type:
             by_type[mtype] = []
-        if len(by_type[mtype]) < MAX_SUGGESTIONS_PER_MANUAL:
-            by_type[mtype].append(item)
+            top_score_by_type[mtype] = item["score"]
+            seen_base_by_type[mtype] = set()
+        if len(by_type[mtype]) >= MAX_SUGGESTIONS_PER_MANUAL:
+            continue
+
+        if by_type[mtype]:
+            signals = item.get("match_signals") or {}
+            strong_signals = bool(
+                (signals.get("cfr_matches") or []) or
+                (signals.get("intent_hits") or [])
+            )
+            top_score = top_score_by_type[mtype]
+            within_tight_window = item["score"] >= (top_score - FOLLOW_ON_SCORE_DELTA)
+            within_strong_window = strong_signals and item["score"] >= (top_score - STRONG_SIGNAL_SCORE_DELTA)
+            if not (within_tight_window or within_strong_window):
+                continue
+
+        base_key = _base_section_key(item.get("section_number"), item.get("section"))
+        if base_key in seen_base_by_type[mtype]:
+            continue
+        seen_base_by_type[mtype].add(base_key)
+        by_type[mtype].append(item)
 
     # Flatten back to list
     suggestions = []
