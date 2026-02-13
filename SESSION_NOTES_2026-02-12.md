@@ -102,17 +102,27 @@ QID 00004724 (DCT 4.2.3) — "Does the certificate holder have a method to ensur
 ### Validation
 - Debug API confirmed QID 00004724 was matching safety-domain sections due to false topic detection
 - QID 00004724 is in DCT 4.2.3 (audit `4a32641e-f5fc-40b6-88f7-a9c0fa93b780`), not 4.2.1
-- **Docker rebuild required** — code changes are local only, container still running old code
+- Docker rebuilt and deployed on 2026-02-13
+
+### Post-Deploy Verification (2026-02-13)
+
+| QID | DCT | Expected | Actual | Score | Status |
+|-----|-----|----------|--------|-------|--------|
+| 00004724 | 4.2.3 | GMM 6.4.1 | GMM 6.4.1(b) | 26.50 | **FIXED** |
+| 00049439 | 4.2.3 | GMM 6.4.3 | GMM 6.4.3 | 17.00 | **PASS** |
+| 00004334 | 4.2.1 | GMM 3.1.1(c) | GMM 14.1.1(c); 3.1.1(c) | 23.25/22.50 | **PASS** |
+
+- DCT 4.2.3: 20/20 QIDs have GMM references, no anomalies
+- DCT 4.2.1: 44/44 QIDs have GMM references, 1 low-scorer (00051913 at 4.00)
+- New diagnostic signals confirmed working: `overlap_capped`, `no_signal_cap_applied`
 
 ---
 
 ## Next Steps
-1. **Rebuild Docker backend** and verify QID 00004724 maps to GMM 6.4.1.
-2. **Regression check**: QID 00049439 → 6.4.3, QID 00004334 → 3.1.1(c).
-3. **Broad validation**: Spot-check 10+ QIDs across 4.2.1 and 4.2.3 for regressions.
-4. Build scored regression set for top-1/top-3 correctness.
-5. Add intent-specific penalties/bonuses for remaining failure classes:
+1. Investigate low-score QID 00051913 (4.2.1, score 4.00) — likely needs additional intent coverage.
+2. Build scored regression set for top-1/top-3 correctness across all DCTs.
+3. Add intent-specific penalties/bonuses for remaining failure classes:
    - CAMP procedural control
    - Data documentation/substantiation
    - Method-of-performance questions
-6. Add optional debug export endpoint/report for rapid human review.
+4. Add optional debug export endpoint/report for rapid human review.

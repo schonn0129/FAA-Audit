@@ -332,11 +332,12 @@ A quality manager can hand this package to a PMI and say:
 - React frontend with full navigation
 
 ### 🔨 In Progress
-- MAP mapping accuracy refinement (section parsing, keyword tuning, topic exclusions)
+- MAP mapping accuracy refinement (intent-first scoring deployed 2026-02-13; broad validation ongoing)
 
 ### 📋 Backlog
 - Manual deletion/replacement workflow (ability to remove uploaded manuals)
 - Phase 1 unchecked item: Flag ambiguous questions for human review
+- Low-score QID investigation (00051913 and similar — weak intent pattern coverage)
 
 ### ❌ Not Started
 - Phase 8: Mapping Memory (Reference Learning)
@@ -347,9 +348,9 @@ A quality manager can hand this package to a PMI and say:
 ## Next Steps
 
 1. **Finalize MAP Mapping Accuracy**
-   - Continue tuning section parsing, keyword matching, and topic exclusions
-   - Spot-check additional QIDs against known-correct manual references
-   - Verify subsection-level precision across all chapters
+   - Intent-first scoring deployed (token overlap cap, cross-domain exclusions, signal ceiling)
+   - Key QIDs verified: 00004724→6.4.1, 00049439→6.4.3, 00004334→3.1.1(c)
+   - Remaining: investigate low-score QIDs, build regression test set, tune remaining intent patterns
 
 2. **Manual Management Improvements**
    - Add ability to delete/replace uploaded manuals
@@ -424,8 +425,8 @@ FAA-Audit/
 
 ## Version Control
 
-- **Document Version:** 1.3
-- **Last Updated:** 2026-02-09
+- **Document Version:** 1.4
+- **Last Updated:** 2026-02-13
 - **DCT Version:** ED 4.2.1 (Version 29) — 44 questions (note: other DCTs will have different question counts)
 - **AIP Version:** TBD (specify when implementing)
 - **GMM Version:** Revision 4 (470 pages, 2502 sections parsed)

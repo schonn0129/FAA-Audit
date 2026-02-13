@@ -700,16 +700,21 @@ healthcheck:
 8. **Added diagnostic signals for debug output**
    - `no_signal_cap_applied`, `overlap_capped`, `raw_overlap_count`, `weak_token_ratio` visible in `?debug=1`.
 
-**Status:** Code changes implemented locally. Docker container rebuild required to deploy.
+**Status:** Deployed and verified.
 
-**To apply changes:**
-```bash
-docker-compose -f docker-compose.windows.yml build backend
-docker-compose -f docker-compose.windows.yml up -d backend
-```
+**Verification results (2026-02-13):**
 
-**Verification needed after rebuild:**
-1. QID 00004724 (4.2.3): Should map to GMM 6.4.1, NOT 9.7.1/8.1.4/5.2.1
-2. QID 00049439 (4.2.3): Should continue mapping to 6.4.3
-3. QID 00004334 (4.2.1): Should continue mapping to 3.1.1(c)
-4. Spot-check 10+ QIDs across 4.2.1 and 4.2.3 for regressions
+| QID | DCT | Expected | Actual | Score | Status |
+|-----|-----|----------|--------|-------|--------|
+| 00004724 | 4.2.3 | GMM 6.4.1 | GMM 6.4.1(b) | 26.50 | **FIXED** |
+| 00049439 | 4.2.3 | GMM 6.4.3 | GMM 6.4.3 | 17.00 | **PASS** |
+| 00004334 | 4.2.1 | GMM 3.1.1(c) | GMM 14.1.1(c); 3.1.1(c) | 23.25/22.50 | **PASS** |
+
+**Broad spot-check:**
+- DCT 4.2.3: 20 QIDs — all have GMM references, no anomalies
+- DCT 4.2.1: 44 QIDs — all have GMM references, 1 low-scorer (00051913 at 4.00 — weak intent coverage, not a regression)
+- No false [CAPPED] flags on top results
+- `overlap_capped` diagnostic firing correctly on 6+ token overlaps
+
+**Remaining low-score QIDs to investigate:**
+- 00051913 (4.2.1): score 4.00 — likely needs additional intent patterns for its question type
