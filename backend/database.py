@@ -18,7 +18,8 @@ from models import (
     AuditScope,
     Manual,
     ManualSection,
-    QuestionApplicability
+    QuestionApplicability,
+    FinalizedMapping
 )
 
 # Create engine with SQLite optimizations for concurrent access
@@ -515,6 +516,35 @@ def get_manual_sections(manual_id: str) -> list:
             .all()
         )
         return [s.to_dict() for s in sections]
+
+
+def delete_manual(manual_id: str) -> bool:
+    """
+    Delete a manual and its sections. Also cleans up pinned_manual_ids
+    on any audits that reference this manual.
+    """
+    with get_session() as session:
+        manual = session.query(Manual).filter(Manual.id == manual_id).first()
+        if not manual:
+            return False
+
+        # Clean up audit pins that reference this manual
+        audits = session.query(Audit).all()
+        for audit in audits:
+            pinned = audit.pinned_manual_ids or {}
+            changed = False
+            for mtype, mid in list(pinned.items()):
+                if mid == manual_id:
+                    del pinned[mtype]
+                    changed = True
+            if changed:
+                audit.pinned_manual_ids = pinned
+                session.add(audit)
+
+        # Cascade deletes ManualSection rows via ORM relationship
+        session.delete(manual)
+        session.commit()
+        return True
 
 
 def add_manual_section_link(audit_id: str, qid: str, manual_type: str, section: str,
@@ -1422,6 +1452,96 @@ def get_embedding_stats(audit_id: str = None) -> dict:
                 "without_embeddings": total_sections - sections_with_embeddings
             }
         }
+
+
+# =============================================================================
+# FINALIZED MAPPING FUNCTIONS (Phase 8)
+# =============================================================================
+
+
+def finalize_qid_mapping(dct_edition: str, dct_version: str, qid: str,
+                         manual_section_links: list, finalized_by: str = None,
+                         source_audit_id: str = None) -> dict:
+    """
+    Save or update finalized manual references for a QID.
+    Upsert: if a record for (dct_edition, dct_version, qid) exists, update it.
+    Each link is stamped with source="finalized".
+    """
+    from datetime import datetime
+
+    stamped_links = []
+    for link in manual_section_links:
+        stamped = dict(link)
+        stamped["source"] = "finalized"
+        stamped_links.append(stamped)
+
+    with get_session() as session:
+        existing = session.query(FinalizedMapping).filter(
+            FinalizedMapping.dct_edition == dct_edition,
+            FinalizedMapping.dct_version == dct_version,
+            FinalizedMapping.qid == qid
+        ).first()
+
+        if existing:
+            existing.manual_section_links = stamped_links
+            existing.finalized_by = finalized_by
+            existing.finalized_date = datetime.utcnow()
+            existing.source_audit_id = source_audit_id
+        else:
+            existing = FinalizedMapping(
+                dct_edition=dct_edition,
+                dct_version=dct_version,
+                qid=qid,
+                manual_section_links=stamped_links,
+                finalized_by=finalized_by,
+                source_audit_id=source_audit_id
+            )
+            session.add(existing)
+
+        session.commit()
+        session.refresh(existing)
+        return existing.to_dict()
+
+
+def get_finalized_mapping(dct_edition: str, dct_version: str, qid: str) -> dict:
+    """Look up a single finalized mapping by DCT identity and QID."""
+    with get_session() as session:
+        mapping = session.query(FinalizedMapping).filter(
+            FinalizedMapping.dct_edition == dct_edition,
+            FinalizedMapping.dct_version == dct_version,
+            FinalizedMapping.qid == qid
+        ).first()
+        return mapping.to_dict() if mapping else None
+
+
+def get_finalized_mappings_for_dct(dct_edition: str, dct_version: str) -> dict:
+    """
+    Get all finalized mappings for a DCT edition/version, keyed by QID.
+
+    Returns:
+        dict: {qid: finalized_mapping_dict, ...}
+    """
+    with get_session() as session:
+        mappings = session.query(FinalizedMapping).filter(
+            FinalizedMapping.dct_edition == dct_edition,
+            FinalizedMapping.dct_version == dct_version
+        ).all()
+        return {m.qid: m.to_dict() for m in mappings}
+
+
+def unfinalize_qid_mapping(dct_edition: str, dct_version: str, qid: str) -> bool:
+    """Remove a finalized mapping for a QID. Returns True if deleted."""
+    with get_session() as session:
+        mapping = session.query(FinalizedMapping).filter(
+            FinalizedMapping.dct_edition == dct_edition,
+            FinalizedMapping.dct_version == dct_version,
+            FinalizedMapping.qid == qid
+        ).first()
+        if mapping:
+            session.delete(mapping)
+            session.commit()
+            return True
+        return False
 
 
 # Initialize database on import

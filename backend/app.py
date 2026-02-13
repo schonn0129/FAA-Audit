@@ -454,6 +454,33 @@ def reparse_manual(manual_id):
         }), 500
 
 
+@app.route('/api/manuals/<manual_id>', methods=['DELETE'])
+def delete_manual(manual_id):
+    """Delete an uploaded manual and its sections."""
+    manual = db.get_manual(manual_id)
+    if not manual:
+        return jsonify({"error": "Manual not found"}), 404
+
+    # Remove PDF file from disk
+    filename = manual.get("filename", "")
+    filepath = os.path.join(MANUAL_UPLOAD_FOLDER, f"{manual_id}_{filename}")
+    if os.path.exists(filepath):
+        os.remove(filepath)
+    else:
+        # Fallback: search for any file prefixed by manual_id
+        try:
+            for f in os.listdir(MANUAL_UPLOAD_FOLDER):
+                if f.startswith(f"{manual_id}_"):
+                    os.remove(os.path.join(MANUAL_UPLOAD_FOLDER, f))
+                    break
+        except OSError:
+            pass
+
+    db.delete_manual(manual_id)
+    logger.info(f"Deleted manual {manual_id} ({filename})")
+    return jsonify({"message": "Manual deleted successfully"}), 200
+
+
 # =============================================================================
 # OWNERSHIP ASSIGNMENT ENDPOINTS (Phase 2)
 # =============================================================================
@@ -1257,6 +1284,122 @@ def get_embedding_config():
         "sentence_transformers_version": st_version,
         "statistics": db.get_embedding_stats()
     }), 200
+
+
+# =============================================================================
+# MAPPING MEMORY ENDPOINTS (Phase 8)
+# =============================================================================
+
+
+@app.route('/api/audits/<audit_id>/finalize-mapping', methods=['POST'])
+def finalize_mapping(audit_id):
+    """
+    Finalize the manual references for a specific QID.
+    Saves the current manual_section_links from the OwnershipAssignment
+    into the cross-audit FinalizedMapping table.
+
+    Body: {"qid": "00004334", "finalized_by": "John Smith"}
+    """
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Audit not found"}), 404
+
+    dct_edition = record.get("metadata", {}).get("dct_edition")
+    dct_version = record.get("metadata", {}).get("dct_version")
+    if not dct_edition or not dct_version:
+        return jsonify({"error": "Audit is missing dct_edition or dct_version"}), 400
+
+    data = request.get_json() or {}
+    qid = data.get("qid")
+    if not qid:
+        return jsonify({"error": "qid is required"}), 400
+
+    finalized_by = data.get("finalized_by")
+
+    try:
+        from models import Question as QuestionModel, OwnershipAssignment as OAModel
+        with db.get_session() as session:
+            question = session.query(QuestionModel).filter(
+                QuestionModel.audit_id == audit_id,
+                QuestionModel.qid == qid
+            ).first()
+            if not question:
+                return jsonify({"error": f"QID {qid} not found in audit"}), 404
+
+            oa = session.query(OAModel).filter(
+                OAModel.question_id == question.id
+            ).first()
+            if not oa:
+                return jsonify({"error": f"No ownership assignment for QID {qid}"}), 404
+
+            current_links = oa.manual_section_links or []
+
+        result = db.finalize_qid_mapping(
+            dct_edition=dct_edition,
+            dct_version=dct_version,
+            qid=qid,
+            manual_section_links=current_links,
+            finalized_by=finalized_by,
+            source_audit_id=audit_id
+        )
+
+        logger.info(f"Finalized mapping for QID {qid} (DCT {dct_edition} v{dct_version})")
+        return jsonify(result), 200
+
+    except Exception as e:
+        logger.error(f"Error finalizing mapping: {e}", exc_info=True)
+        return jsonify({"error": "Failed to finalize mapping", "message": str(e)}), 500
+
+
+@app.route('/api/audits/<audit_id>/finalized-mappings', methods=['GET'])
+def get_finalized_mappings(audit_id):
+    """Get finalization status for all QIDs in an audit's DCT."""
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Audit not found"}), 404
+
+    dct_edition = record.get("metadata", {}).get("dct_edition")
+    dct_version = record.get("metadata", {}).get("dct_version")
+    if not dct_edition or not dct_version:
+        return jsonify({"error": "Audit is missing dct_edition or dct_version"}), 400
+
+    mappings = db.get_finalized_mappings_for_dct(dct_edition, dct_version)
+
+    return jsonify({
+        "audit_id": audit_id,
+        "dct_edition": dct_edition,
+        "dct_version": dct_version,
+        "finalized_count": len(mappings),
+        "mappings": mappings
+    }), 200
+
+
+@app.route('/api/audits/<audit_id>/unfinalize-mapping', methods=['POST'])
+def unfinalize_mapping(audit_id):
+    """
+    Remove the finalized mapping for a QID.
+    Body: {"qid": "00004334"}
+    """
+    record = db.get_audit(audit_id)
+    if not record:
+        return jsonify({"error": "Audit not found"}), 404
+
+    dct_edition = record.get("metadata", {}).get("dct_edition")
+    dct_version = record.get("metadata", {}).get("dct_version")
+    if not dct_edition or not dct_version:
+        return jsonify({"error": "Audit is missing dct_edition or dct_version"}), 400
+
+    data = request.get_json() or {}
+    qid = data.get("qid")
+    if not qid:
+        return jsonify({"error": "qid is required"}), 400
+
+    deleted = db.unfinalize_qid_mapping(dct_edition, dct_version, qid)
+    if deleted:
+        logger.info(f"Unfinalized mapping for QID {qid} (DCT {dct_edition} v{dct_version})")
+        return jsonify({"message": f"Finalized mapping removed for QID {qid}"}), 200
+    else:
+        return jsonify({"message": f"No finalized mapping found for QID {qid}"}), 200
 
 
 if __name__ == '__main__':

@@ -20,6 +20,8 @@ function MapTable({ auditId }) {
     reference: ''
   });
   const [removeLinkStatus, setRemoveLinkStatus] = useState(null);
+  const [finalizingQid, setFinalizingQid] = useState(null);
+  const [finalizeStatus, setFinalizeStatus] = useState(null);
 
   const loadMap = () => {
     if (!auditId) return;
@@ -72,6 +74,34 @@ function MapTable({ auditId }) {
       loadMap();
     } catch (err) {
       setRemoveLinkStatus(err.message);
+    }
+  };
+
+  const handleFinalize = async (qid) => {
+    setFinalizingQid(qid);
+    setFinalizeStatus(null);
+    try {
+      await api.finalizeMapping(auditId, qid);
+      setFinalizeStatus(`QID ${qid} references saved.`);
+      loadMap();
+    } catch (err) {
+      setFinalizeStatus(`Error: ${err.message}`);
+    } finally {
+      setFinalizingQid(null);
+    }
+  };
+
+  const handleUnfinalize = async (qid) => {
+    setFinalizingQid(qid);
+    setFinalizeStatus(null);
+    try {
+      await api.unfinalizeMapping(auditId, qid);
+      setFinalizeStatus(`QID ${qid} saved mapping removed.`);
+      loadMap();
+    } catch (err) {
+      setFinalizeStatus(`Error: ${err.message}`);
+    } finally {
+      setFinalizingQid(null);
     }
   };
 
@@ -215,6 +245,8 @@ function MapTable({ auditId }) {
         {removeLinkStatus && <div className="map-manual-entry-status">{removeLinkStatus}</div>}
       </div>
 
+      {finalizeStatus && <div className="map-manual-entry-status">{finalizeStatus}</div>}
+
       <div className="map-table-container">
         <table>
           <thead>
@@ -229,6 +261,7 @@ function MapTable({ auditId }) {
               <th>Applicability Reason</th>
               <th>Audit Finding</th>
               <th>Compliance Status</th>
+              <th>Memory</th>
             </tr>
           </thead>
           <tbody>
@@ -236,19 +269,37 @@ function MapTable({ auditId }) {
               <tr key={`${row.QID || 'qid'}-${idx}`}>
                 <td className="qid">{row.QID}</td>
                 <td className="question-text">{row.Question_Text}</td>
-                <td>{row.AIP_Reference}</td>
-                <td>{row.GMM_Reference}</td>
-                <td>{row.Other_Manual_References}</td>
+                <td className={row.is_finalized ? 'ref-finalized' : ''}>{row.AIP_Reference}</td>
+                <td className={row.is_finalized ? 'ref-finalized' : ''}>{row.GMM_Reference}</td>
+                <td className={row.is_finalized ? 'ref-finalized' : ''}>{row.Other_Manual_References}</td>
                 <td>{row.Evidence_Required}</td>
                 <td>{row.Applicability_Status}</td>
                 <td>{row.Applicability_Reason}</td>
                 <td>{row.Audit_Finding}</td>
                 <td>{row.Compliance_Status}</td>
+                <td className="finalize-cell">
+                  {row.is_finalized && (
+                    <span
+                      className="finalized-badge"
+                      title={`Saved ${row.finalized_date || ''} by ${row.finalized_by || 'unknown'}`}
+                    >
+                      Saved
+                    </span>
+                  )}
+                  <button
+                    className={row.is_finalized ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'}
+                    disabled={finalizingQid === row.QID}
+                    onClick={() => row.is_finalized ? handleUnfinalize(row.QID) : handleFinalize(row.QID)}
+                    title={row.is_finalized ? 'Update saved references' : 'Save references for future audits'}
+                  >
+                    {finalizingQid === row.QID ? '...' : (row.is_finalized ? 'Re-save' : 'Save')}
+                  </button>
+                </td>
               </tr>
             ))}
             {map_rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="empty-cell">
+                <td colSpan={11} className="empty-cell">
                   No MAP rows for current scope.
                 </td>
               </tr>

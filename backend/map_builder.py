@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
 import database as db
-from models import Question, OwnershipAssignment, Manual, QuestionApplicability
+from models import Question, OwnershipAssignment, Manual, QuestionApplicability, Audit, FinalizedMapping
 import manual_mapper
 from scoping import VALID_FUNCTIONS
 
@@ -136,6 +136,23 @@ def build_map_rows(
             for sections in sections_by_type.values()
             if sections and sections[0].manual_id
         })
+
+        # Phase 8: Bulk-load finalized mappings for this DCT edition/version
+        finalized_meta: Dict[str, Dict[str, Any]] = {}
+        audit_obj = session.query(Audit).filter(Audit.id == audit_id).first()
+        if audit_obj and audit_obj.dct_edition and audit_obj.dct_version:
+            for fm in session.query(FinalizedMapping).filter(
+                FinalizedMapping.dct_edition == audit_obj.dct_edition,
+                FinalizedMapping.dct_version == audit_obj.dct_version
+            ).all():
+                finalized_meta[fm.qid] = {
+                    "links": fm.manual_section_links or [],
+                    "date": fm.finalized_date.isoformat() if fm.finalized_date else None,
+                    "by": fm.finalized_by
+                }
+            if finalized_meta:
+                logger.info(f"Loaded {len(finalized_meta)} finalized mappings for DCT {audit_obj.dct_edition} v{audit_obj.dct_version}")
+
         rows: List[Dict[str, Any]] = []
         not_applicable_count = 0
         for question, assignment, applicability in query.all():
@@ -166,6 +183,26 @@ def build_map_rows(
                     ) not in excluded_keys
                 ]
 
+            # Phase 8: Inject finalized references (priority between manual overrides and auto-suggestions)
+            fin = finalized_meta.get(question.qid)
+            if fin:
+                existing_keys = {
+                    (
+                        (l.get("manual_type") or l.get("manual") or "").upper(),
+                        str(l.get("section") or l.get("section_number") or l.get("reference") or "")
+                    )
+                    for l in manual_links
+                }
+                for flink in fin["links"]:
+                    key = (
+                        (flink.get("manual_type") or flink.get("manual") or "").upper(),
+                        str(flink.get("section") or flink.get("section_number") or flink.get("reference") or "")
+                    )
+                    if key not in excluded_keys and ("ANY", "*") not in excluded_keys:
+                        if key not in existing_keys:
+                            manual_links.append(flink)
+                            existing_keys.add(key)
+
             if sections_by_type:
                 # Use semantic-enhanced matching if enabled
                 if use_semantic:
@@ -195,6 +232,8 @@ def build_map_rows(
                             merged.append(link)
                             existing_keys.add(key)
                     manual_links = merged
+            # Phase 8: Finalization metadata for this row
+            fin_info = finalized_meta.get(question.qid)
             row = {
                 "QID": question.qid or "",
                 "Question_Text": question.question_text_full or question.question_text_condensed or "",
@@ -205,7 +244,10 @@ def build_map_rows(
                 "Applicability_Status": applicability_status,
                 "Applicability_Reason": applicability_reason,
                 "Audit_Finding": "",
-                "Compliance_Status": ""
+                "Compliance_Status": "",
+                "is_finalized": fin_info is not None,
+                "finalized_date": fin_info["date"] if fin_info else None,
+                "finalized_by": fin_info["by"] if fin_info else None
             }
             if include_debug:
                 debug_links = []

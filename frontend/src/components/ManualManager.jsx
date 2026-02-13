@@ -5,6 +5,7 @@ function ManualManager() {
   const [manuals, setManuals] = useState([]);
   const [manualType, setManualType] = useState('AIP');
   const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState(null);
   const [error, setError] = useState(null);
 
   const loadManuals = async () => {
@@ -43,13 +44,31 @@ function ManualManager() {
     }
   };
 
+  const handleDelete = async (manual) => {
+    const confirmed = window.confirm(
+      `Delete "${manual.filename}"? This will remove the manual and all its parsed sections.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setDeleting(manual.id);
+      setError(null);
+      await api.deleteManual(manual.id);
+      await loadManuals();
+    } catch (err) {
+      setError(err.message || 'Failed to delete manual');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
   return (
     <div className="manual-manager">
       <div className="manual-header">
         <div>
           <h3>Company Manuals</h3>
           <p className="manual-subtitle">
-            Upload AIP/GMM manuals to auto-suggest MAP references.
+            Upload AIP/GMM manuals to auto-suggest MAP references. To replace a manual, upload the new version then delete the old one.
           </p>
         </div>
       </div>
@@ -92,6 +111,14 @@ function ManualManager() {
             <div className="manual-item-main">
               <strong>{manual.filename}</strong>
               <span className="manual-type">{manual.manual_type}</span>
+              <button
+                className="manual-delete-btn"
+                onClick={() => handleDelete(manual)}
+                disabled={deleting === manual.id}
+                title="Delete this manual"
+              >
+                {deleting === manual.id ? '...' : '\u00D7'}
+              </button>
             </div>
             <div className="manual-item-meta">
               <span>Pages: {manual.page_count || 0}</span>

@@ -264,6 +264,20 @@ export const api = {
   },
 
   /**
+   * Delete an uploaded manual
+   */
+  async deleteManual(manualId) {
+    const response = await fetch(`${API_BASE_URL}/manuals/${manualId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Delete failed' }));
+      throw new Error(error.error || 'Failed to delete manual');
+    }
+    return response.json();
+  },
+
+  /**
    * List uploaded manuals
    */
   async getManuals(manualType = null) {
@@ -341,6 +355,45 @@ export const api = {
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Auto-detect failed' }));
       throw new Error(error.error || 'Failed to auto-detect applicability');
+    }
+    return response.json();
+  },
+
+  // =============================================================================
+  // MAPPING MEMORY ENDPOINTS (Phase 8)
+  // =============================================================================
+
+  async finalizeMapping(auditId, qid, finalizedBy = null) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/finalize-mapping`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qid, finalized_by: finalizedBy })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to finalize mapping');
+    }
+    return data;
+  },
+
+  async unfinalizeMapping(auditId, qid) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/unfinalize-mapping`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qid })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to unfinalize mapping');
+    }
+    return data;
+  },
+
+  async getFinalizedMappings(auditId) {
+    const response = await fetch(`${API_BASE_URL}/audits/${auditId}/finalized-mappings`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Fetch failed' }));
+      throw new Error(error.error || 'Failed to fetch finalized mappings');
     }
     return response.json();
   },

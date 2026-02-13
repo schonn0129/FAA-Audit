@@ -3,7 +3,7 @@ SQLAlchemy models for the FAA Audit application.
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey, Boolean, Float, LargeBinary
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey, Boolean, Float, LargeBinary, UniqueConstraint
 from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
@@ -427,4 +427,43 @@ class AuditScope(Base):
             "created_date": self.created_date.isoformat() if self.created_date else None,
             "created_by": self.created_by,
             "last_modified_date": self.last_modified_date.isoformat() if self.last_modified_date else None
+        }
+
+
+class FinalizedMapping(Base):
+    """
+    Stores finalized manual references for a QID, scoped to a DCT edition/version.
+    Independent of any single audit — enables cross-audit reuse.
+
+    When an auditor finalizes a QID's references, they are saved here.
+    Future audits with the same DCT edition/version auto-populate from this table.
+    """
+    __tablename__ = 'finalized_mappings'
+    __table_args__ = (
+        UniqueConstraint('dct_edition', 'dct_version', 'qid', name='uq_finalized_dct_qid'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    dct_edition = Column(String(50), nullable=False)      # e.g. "4.2.1"
+    dct_version = Column(String(50), nullable=False)      # e.g. "29"
+    qid = Column(String(20), nullable=False)              # e.g. "00004334"
+
+    # Same JSON shape as OwnershipAssignment.manual_section_links
+    manual_section_links = Column(JSON, nullable=False, default=list)
+
+    # Audit trail
+    finalized_by = Column(String(100), nullable=True)
+    finalized_date = Column(DateTime, default=datetime.utcnow)
+    source_audit_id = Column(String(36), nullable=True)   # Which audit this came from
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "dct_edition": self.dct_edition,
+            "dct_version": self.dct_version,
+            "qid": self.qid,
+            "manual_section_links": self.manual_section_links or [],
+            "finalized_by": self.finalized_by,
+            "finalized_date": self.finalized_date.isoformat() if self.finalized_date else None,
+            "source_audit_id": self.source_audit_id
         }
